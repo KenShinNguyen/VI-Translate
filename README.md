@@ -32,7 +32,7 @@ Google dịch *conduction* thành dẫn điện trong một văn bản về nhi�
 
 ## App desktop
 
-Tải bản build mới nhất ở tab **Releases**, giải nén, chạy `PDFTranslate.exe`. Không cần cài Python, không cần mạng cho lần chạy đầu (model nhận diện bố cục và font đã đóng gói sẵn). Bản nén ~198 MB, giải nén ra ~382 MB.
+Tải bản build mới nhất ở [**Releases**](https://github.com/breslee1707/VI-Translate/releases/latest), giải nén, chạy `PDFTranslate.exe`. Không cần cài Python, không cần mạng cho lần chạy đầu (model nhận diện bố cục và font đã đóng gói sẵn). Bản nén ~198 MB, giải nén ra ~382 MB.
 
 Ba cách đưa file vào: kéo thả vào cửa sổ app, bấm nút *Chọn file* / *Chọn thư mục*, hoặc thả thẳng lên icon `PDFTranslate.exe`. Chọn ngôn ngữ đích rồi bấm **Dịch**. App xử lý lần lượt từng file và ghi kết quả vào thư mục `translated` bên cạnh file nguồn; một file lỗi không làm dừng cả loạt.
 
