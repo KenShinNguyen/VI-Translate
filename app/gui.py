@@ -140,6 +140,8 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
         self.worker: threading.Thread | None = None
         self.batch_done = 0
         self.batch_total = 0
+        self.last_output: Path | None = None
+        self.outputs: dict[Path, Path] = {}
 
         self._build()
         self.drop_target_register(DND_FILES)
@@ -221,14 +223,31 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
         )
         self.status.grid(row=5, column=0, padx=24, sticky="w")
 
-        ctk.CTkLabel(
+        self.output_link = ctk.CTkLabel(
             self,
-            text="Bản app dùng Google Translate. Cần chất lượng cao hơn thì dùng skill pdf-translate trong Claude Code.",
-            font=ctk.CTkFont(self.ui_font, size=11),
-            text_color=("gray45", "gray60"),
+            text="",
+            font=ctk.CTkFont(self.ui_font, size=12, underline=True),
+            text_color=("#1f6feb", "#58a6ff"),
+            cursor="hand2",
             wraplength=560,
             justify="left",
-        ).grid(row=6, column=0, padx=24, pady=(4, 20), sticky="w")
+        )
+        self.output_link.grid(row=6, column=0, padx=24, pady=(4, 20), sticky="w")
+        self.output_link.bind("<Button-1>", lambda _event: self._open(self.last_output))
+
+    @staticmethod
+    def _open(target: Path | None) -> None:
+        """Open a finished file or its folder in the file manager."""
+        if target is None or not Path(target).exists():
+            return
+        try:
+            os.startfile(target)  # noqa: S606 - Windows shell open, the app is Windows only
+        except OSError:
+            pass  # nothing useful to do if the shell refuses
+
+    def _show_output_link(self) -> None:
+        if self.last_output is not None:
+            self.output_link.configure(text=f"Mở thư mục kết quả:  {self.last_output}")
 
     # -- input -------------------------------------------------------------
     def _on_drop(self, event) -> None:
@@ -286,7 +305,7 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
 
     def _run(self, files: list[Path], language: str, overwrite: bool) -> None:
         for index, path in enumerate(files, 1):
-            self.events.put(("status", path, "running", ""))
+            self.events.put(("status", path, "running", "", None))
             destination = path.parent / "translated"
 
             def report(done: int, total: int, _p: Path = path) -> None:
@@ -306,16 +325,16 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
                     else str(result.path)
                 )
                 state = "partial" if result.untranslated else "done"
-                self.events.put(("status", path, state, detail))
+                self.events.put(("status", path, state, detail, result.path))
             except TranslationError as error:
                 # One unreadable or already-translated file must not stop the batch.
                 state = "skipped" if "already exists" in str(error) else "failed"
                 if state == "failed":
                     self._log_failure(destination, path, error)
-                self.events.put(("status", path, state, str(error)))
+                self.events.put(("status", path, state, str(error), None))
             except Exception as error:  # noqa: BLE001 - keep the queue moving
                 self._log_failure(destination, path, error)
-                self.events.put(("status", path, "failed", f"{type(error).__name__}: {error}"))
+                self.events.put(("status", path, "failed", f"{type(error).__name__}: {error}", None))
             self.events.put(("progress", index / len(files), index, len(files)))
         self.events.put(("finished",))
 
@@ -341,13 +360,20 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
             except queue.Empty:
                 break
             if event[0] == "status":
-                _, path, state, detail = event
+                _, path, state, detail, produced = event
+                if produced is not None:
+                    self.outputs[path] = Path(produced)
+                    self.last_output = Path(produced).parent
+                    self._show_output_link()
                 self.states[path] = state
                 row = self.rows[path]
                 text = f"{STATUS_MARKS[state]}  {path.name}"
                 if state in ("failed", "skipped", "partial") and detail:
                     text += f"\n     {detail.splitlines()[0]}"
                 row.configure(text=text, text_color=STATUS_COLORS[state])
+                if path in self.outputs:
+                    row.configure(cursor="hand2")
+                    row.bind("<Button-1>", lambda _e, p=path: self._open(self.outputs.get(p)))
             elif event[0] == "page":
                 # Per-page progress inside the file being translated. A textbook
                 # is hundreds of pages, so file-level progress alone looks stuck.
