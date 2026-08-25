@@ -61,6 +61,18 @@ STATUS_COLORS = {
 }
 
 
+def ensure_writable_streams() -> None:
+    """Give the app real streams, because a windowed build has none.
+
+    PyInstaller sets sys.stdout and sys.stderr to None when console=False, and
+    the core's tqdm progress bar writes to stderr, so translating raised
+    AttributeError: 'NoneType' object has no attribute 'write'.
+    """
+    for name in ("stdout", "stderr", "__stdout__", "__stderr__"):
+        if getattr(sys, name, None) is None:
+            setattr(sys, name, open(os.devnull, "w", encoding="utf-8"))
+
+
 def use_bundled_assets() -> None:
     """Point the engine at the packaged model and font so no download is needed."""
     model = ASSET_DIRECTORY / "doclayout.onnx"
@@ -126,6 +138,8 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
         self.states: dict[Path, str] = {}
         self.events: queue.Queue[tuple] = queue.Queue()
         self.worker: threading.Thread | None = None
+        self.batch_done = 0
+        self.batch_total = 0
 
         self._build()
         self.drop_target_register(DND_FILES)
@@ -264,6 +278,7 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
 
         self.translate_button.configure(state="disabled", text="Đang dịch…")
         self.progress.set(0)
+        self.batch_done, self.batch_total = 0, len(pending)
         self.worker = threading.Thread(
             target=self._run, args=(pending, language, overwrite), daemon=True
         )
@@ -273,12 +288,17 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
         for index, path in enumerate(files, 1):
             self.events.put(("status", path, "running", ""))
             destination = path.parent / "translated"
+
+            def report(done: int, total: int, _p: Path = path) -> None:
+                self.events.put(("page", _p, done, total))
+
             try:
                 result = translate_pdf(
                     path,
                     destination,
                     target_language=language,
                     overwrite=overwrite,
+                    on_progress=report,
                 )
                 detail = (
                     f"{result.untranslated} đoạn chưa dịch được"
@@ -296,7 +316,7 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
             except Exception as error:  # noqa: BLE001 - keep the queue moving
                 self._log_failure(destination, path, error)
                 self.events.put(("status", path, "failed", f"{type(error).__name__}: {error}"))
-            self.events.put(("progress", index / len(files)))
+            self.events.put(("progress", index / len(files), index, len(files)))
         self.events.put(("finished",))
 
     @staticmethod
@@ -328,16 +348,38 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
                 if state in ("failed", "skipped", "partial") and detail:
                     text += f"\n     {detail.splitlines()[0]}"
                 row.configure(text=text, text_color=STATUS_COLORS[state])
+            elif event[0] == "page":
+                # Per-page progress inside the file being translated. A textbook
+                # is hundreds of pages, so file-level progress alone looks stuck.
+                _, path, done, total = event
+                if self.states.get(path) == "running" and total:
+                    self.rows[path].configure(
+                        text=f"{STATUS_MARKS['running']}  {path.name}   trang {done}/{total}"
+                    )
+                    self.progress.set((self.batch_done + done / total) / max(self.batch_total, 1))
+                    self.status.configure(
+                        text=f"Đang dịch {path.name}   trang {done}/{total}"
+                    )
             elif event[0] == "progress":
-                self.progress.set(event[1])
+                _, fraction, done_files, total_files = event
+                self.batch_done, self.batch_total = done_files, total_files
+                self.progress.set(fraction)
             elif event[0] == "finished":
                 self.translate_button.configure(state="normal", text="Dịch")
-                done = sum(1 for state in self.states.values() if state == "done")
-                self.status.configure(text=f"Xong {done}/{len(self.files)} file")
+                counts = {}
+                for state in self.states.values():
+                    counts[state] = counts.get(state, 0) + 1
+                summary = f"Xong {counts.get('done', 0)}/{len(self.files)} file"
+                if counts.get("partial"):
+                    summary += f", {counts['partial']} file dịch thiếu"
+                if counts.get("failed"):
+                    summary += f", {counts['failed']} file lỗi"
+                self.status.configure(text=summary)
         self.after(100, self._drain_events)
 
 
 def main() -> None:
+    ensure_writable_streams()
     use_bundled_assets()
     ctk.set_appearance_mode("system")
     ctk.set_default_color_theme("blue")

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import io
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 try:
-    from app.gui import LANGUAGE_NAMES, collect_pdfs
+    from app.gui import LANGUAGE_NAMES, collect_pdfs, ensure_writable_streams
 except ImportError:  # customtkinter and tkinterdnd2 are app-only dependencies
     collect_pdfs = None
 
@@ -55,6 +57,36 @@ class LanguageMenuTests(unittest.TestCase):
 
     def test_menu_labels_are_unique_so_the_reverse_lookup_is_total(self):
         self.assertEqual(len(set(LANGUAGE_NAMES.values())), len(LANGUAGE_NAMES))
+
+
+@unittest.skipIf(collect_pdfs is None, "desktop app dependencies are not installed")
+class WritableStreamTests(unittest.TestCase):
+    """A windowed PyInstaller build sets sys.stdout and sys.stderr to None, and
+    the core's tqdm progress bar writes to stderr. Without this, translating in
+    the packaged app died with "'NoneType' object has no attribute 'write'"."""
+
+    def setUp(self) -> None:
+        self.saved = {name: getattr(sys, name) for name in
+                      ("stdout", "stderr", "__stdout__", "__stderr__")}
+
+    def tearDown(self) -> None:
+        for name, stream in self.saved.items():
+            setattr(sys, name, stream)
+
+    def test_replaces_streams_that_a_windowed_build_leaves_as_none(self):
+        sys.stdout = sys.stderr = None
+        ensure_writable_streams()
+        for name in ("stdout", "stderr"):
+            with self.subTest(stream=name):
+                stream = getattr(sys, name)
+                self.assertIsNotNone(stream)
+                stream.write("tqdm writes here")  # must not raise
+
+    def test_leaves_a_working_stream_alone(self):
+        marker = io.StringIO()
+        sys.stdout = marker
+        ensure_writable_streams()
+        self.assertIs(sys.stdout, marker)
 
 
 if __name__ == "__main__":

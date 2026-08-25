@@ -38,7 +38,7 @@ class TranslatePdfTests(unittest.TestCase):
         self.assertEqual(result.untranslated, 0)
         self.assertEqual(result.path.read_bytes(), b"%PDF-1.7\ntranslated")
         run.assert_called_once_with(
-            self.source, mock.ANY, "vi", "auto", None, 2, False, "google", {}
+            self.source, mock.ANY, "vi", "auto", None, 2, False, "google", {}, None
         )
 
     @mock.patch.object(translate_pdf, "_require_core")
@@ -111,6 +111,7 @@ class TranslatePdfTests(unittest.TestCase):
             thread=1,
             model=fake_model,
             envs={"segments_in": "table.jsonl"},
+            callback=None,
             ignore_cache=True,
         )
 

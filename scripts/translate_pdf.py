@@ -10,7 +10,7 @@ import re
 import shutil
 import sys
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import NamedTuple
 
@@ -212,6 +212,7 @@ def _run_engine(
     ignore_cache: bool,
     engine: str,
     envs: dict[str, str],
+    on_progress: Callable[[int, int], None] | None = None,
 ) -> int:
     """Run the core and return how many segments were left untranslated."""
     from pdf2zh.doclayout import OnnxModel
@@ -220,6 +221,13 @@ def _run_engine(
     # A packaged build ships the layout model so the first run needs no network.
     bundled_model = os.environ.get("PDF_TRANSLATE_MODEL")
     model = OnnxModel(bundled_model) if bundled_model else OnnxModel.load_available()
+
+    # The core reports progress by handing its tqdm bar to a callback.
+    callback = None
+    if on_progress is not None:
+        def callback(progress: object) -> None:
+            on_progress(getattr(progress, "n", 0), getattr(progress, "total", 0) or 0)
+
     result = translate(
         files=[str(source)],
         output=str(temp_output),
@@ -230,6 +238,7 @@ def _run_engine(
         thread=threads,
         model=model,
         envs=envs,
+        callback=callback,
         ignore_cache=ignore_cache,
     )
     if len(result) != 1:
@@ -250,6 +259,7 @@ def translate_pdf(
     engine: str = "google",
     segments: Path | None = None,
     emit_segments: Path | None = None,
+    on_progress: Callable[[int, int], None] | None = None,
 ) -> Translation:
     """Translate one PDF, reporting any segments the engine could not translate."""
     _require_core()
@@ -281,6 +291,7 @@ def translate_pdf(
                 ignore_cache,
                 engine,
                 envs,
+                on_progress,
             )
         except TranslationError:
             raise
