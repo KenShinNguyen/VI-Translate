@@ -42,6 +42,8 @@ Trang mục lục, index, danh mục ký hiệu và tài liệu tham khảo đư
 
 Đoạn văn dài quá 5000 ký tự bị cắt bớt. Trường hợp này hiếm, vì mỗi đoạn thường ngắn hơn nhiều.
 
+Công thức phân số nằm giữa dòng chữ đôi khi bị chữ phía sau đè lên. Bản dịch dài ngắn khác nhau nên công thức rơi vào vị trí khác so với bản gốc, và bộ dàn chữ chưa chừa đủ chỗ cho những công thức cao. Lỗi này rải rác, không phải trang nào cũng có. Nếu tài liệu của bạn dày đặc công thức nội dòng thì nên xem lại kết quả.
+
 ## Dùng trong Claude Code
 
 Repo này đồng thời là một skill. Clone về thư mục skills rồi cài:
