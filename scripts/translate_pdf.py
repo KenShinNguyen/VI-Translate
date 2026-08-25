@@ -36,6 +36,12 @@ TARGET_LANGUAGES = frozenset(
 
 ENGINES = ("google", "handoff")
 
+# Measured on an eight-page sample: 2 threads 48s, 4 threads 30s, 8 threads 27s,
+# 12 threads 29s. Past four, the layout pass rather than the network is the floor,
+# and more concurrency only raises the odds of the service throttling a long run.
+DEFAULT_THREADS = 4
+MAX_THREADS = 8
+
 
 class TranslationError(RuntimeError):
     """Raised when input validation or the translation engine fails."""
@@ -50,8 +56,8 @@ class Translation(NamedTuple):
 
 def _positive_threads(value: str) -> int:
     threads = int(value)
-    if not 1 <= threads <= 4:
-        raise argparse.ArgumentTypeError("threads must be between 1 and 4")
+    if not 1 <= threads <= MAX_THREADS:
+        raise argparse.ArgumentTypeError(f"threads must be between 1 and {MAX_THREADS}")
     return threads
 
 
@@ -95,7 +101,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--source-language", default="auto", type=_source_language)
     parser.add_argument("--pages", type=_page_selection)
-    parser.add_argument("--threads", default=2, type=_positive_threads)
+    parser.add_argument("--threads", default=DEFAULT_THREADS, type=_positive_threads)
     parser.add_argument("--engine", default="google", choices=ENGINES)
     parser.add_argument(
         "--segments",
@@ -202,6 +208,24 @@ def _segment_envs(segments: Path | None, emit_segments: Path | None) -> dict[str
     return envs
 
 
+_LAYOUT_MODEL: dict[str | None, object] = {}
+
+
+def _layout_model(bundled_path: str | None) -> object:
+    """Return the layout model, loading it at most once per process.
+
+    Building the inference session takes about half a second, which a batch of
+    files would otherwise pay for every single document.
+    """
+    if bundled_path not in _LAYOUT_MODEL:
+        from pdf2zh.doclayout import OnnxModel
+
+        _LAYOUT_MODEL[bundled_path] = (
+            OnnxModel(bundled_path) if bundled_path else OnnxModel.load_available()
+        )
+    return _LAYOUT_MODEL[bundled_path]
+
+
 def _run_engine(
     source: Path,
     temp_output: Path,
@@ -215,12 +239,10 @@ def _run_engine(
     on_progress: Callable[[int, int], None] | None = None,
 ) -> int:
     """Run the core and return how many segments were left untranslated."""
-    from pdf2zh.doclayout import OnnxModel
     from pdf2zh.high_level import translate
 
     # A packaged build ships the layout model so the first run needs no network.
-    bundled_model = os.environ.get("PDF_TRANSLATE_MODEL")
-    model = OnnxModel(bundled_model) if bundled_model else OnnxModel.load_available()
+    model = _layout_model(os.environ.get("PDF_TRANSLATE_MODEL"))
 
     # The core reports progress by handing its tqdm bar to a callback.
     callback = None
@@ -253,7 +275,7 @@ def translate_pdf(
     target_language: str = DEFAULT_TARGET_LANGUAGE,
     source_language: str = "auto",
     pages: str | None = None,
-    threads: int = 2,
+    threads: int = DEFAULT_THREADS,
     ignore_cache: bool = False,
     overwrite: bool = False,
     engine: str = "google",

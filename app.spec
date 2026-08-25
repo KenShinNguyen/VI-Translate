@@ -15,8 +15,13 @@ ROOT = Path(SPECPATH)
 datas = []
 for optional in ("app/fonts", "app/assets"):
     directory = ROOT / optional
-    if directory.is_dir() and any(directory.iterdir()):
-        datas.append((str(directory), optional))
+    if not directory.is_dir():
+        continue
+    for item in sorted(directory.iterdir()):
+        # onnxruntime caches a hardware-specific optimised graph next to the
+        # model. It is 75 MB, and it is only valid on the machine that built it.
+        if item.is_file() and item.suffix != ".optimized":
+            datas.append((str(item), optional))
 
 datas += collect_data_files("customtkinter")
 datas += collect_data_files("tkinterdnd2")
