@@ -12,6 +12,7 @@ import sys
 import tempfile
 from collections.abc import Sequence
 from pathlib import Path
+from typing import NamedTuple
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 BUNDLED_CORE = (SKILL_ROOT / "pdf2zh").resolve()
@@ -38,6 +39,13 @@ ENGINES = ("google", "handoff")
 
 class TranslationError(RuntimeError):
     """Raised when input validation or the translation engine fails."""
+
+
+class Translation(NamedTuple):
+    """Where the translated file landed, and how much of it stayed in the source language."""
+
+    path: Path | None
+    untranslated: int = 0
 
 
 def _positive_threads(value: str) -> int:
@@ -149,6 +157,23 @@ def _validate_input(path: Path) -> Path:
     return source
 
 
+def _describe(error: BaseException) -> str:
+    """Flatten an exception chain into one line.
+
+    The core wraps every failure in a generic "Failed to translate <path>", so
+    reporting only str(error) hides the reason the document actually failed.
+    """
+    parts: list[str] = []
+    seen: set[int] = set()
+    current: BaseException | None = error
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        message = str(current).strip()
+        parts.append(f"{type(current).__name__}: {message}" if message else type(current).__name__)
+        current = current.__cause__ or current.__context__
+    return " <- ".join(parts)
+
+
 def _pages_to_indices(pages: str | None) -> list[int] | None:
     if pages is None:
         return None
@@ -187,7 +212,8 @@ def _run_engine(
     ignore_cache: bool,
     engine: str,
     envs: dict[str, str],
-) -> None:
+) -> int:
+    """Run the core and return how many segments were left untranslated."""
     from pdf2zh.doclayout import OnnxModel
     from pdf2zh.high_level import translate
 
@@ -208,6 +234,7 @@ def _run_engine(
     )
     if len(result) != 1:
         raise TranslationError("PDF core did not report one translated result")
+    return int(result[0][1] or 0)
 
 
 def translate_pdf(
@@ -223,8 +250,8 @@ def translate_pdf(
     engine: str = "google",
     segments: Path | None = None,
     emit_segments: Path | None = None,
-) -> Path | None:
-    """Translate one PDF. Returns the output path, or None when only emitting segments."""
+) -> Translation:
+    """Translate one PDF, reporting any segments the engine could not translate."""
     _require_core()
     source = _validate_input(input_pdf)
     envs = _segment_envs(segments, emit_segments)
@@ -244,7 +271,7 @@ def translate_pdf(
     with tempfile.TemporaryDirectory(prefix="pdf-translate-", dir=destination_dir) as temp:
         temp_output = Path(temp)
         try:
-            _run_engine(
+            untranslated = _run_engine(
                 source,
                 temp_output,
                 target_language,
@@ -258,10 +285,10 @@ def translate_pdf(
         except TranslationError:
             raise
         except Exception as error:
-            raise TranslationError(f"PDF translation core failed: {error}") from error
+            raise TranslationError(f"PDF translation core failed: {_describe(error)}") from error
 
         if destination is None:
-            return None
+            return Translation(None, untranslated)
 
         generated = temp_output / f"{source.stem}-mono.pdf"
         if not generated.is_file():
@@ -278,7 +305,7 @@ def translate_pdf(
         finally:
             staged.unlink(missing_ok=True)
 
-    return destination
+    return Translation(destination, untranslated)
 
 
 def _use_utf8_output() -> None:
@@ -297,7 +324,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
         _validate_arguments(args)
-        destination = translate_pdf(
+        result = translate_pdf(
             args.input_pdf,
             args.output_dir,
             target_language=args.target_language,
@@ -313,8 +340,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     except TranslationError as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
-    if destination is not None:
-        print(f"Translated PDF: {destination}")
+    if result.path is not None:
+        print(f"Translated PDF: {result.path}")
+    if result.untranslated:
+        print(
+            f"warning: {result.untranslated} segments stayed in the source language "
+            "because the translation service could not be reached",
+            file=sys.stderr,
+        )
     if args.emit_segments is not None:
         emitted = args.emit_segments.expanduser().resolve()
         pending = sum(1 for line in emitted.open(encoding="utf-8") if line.strip())

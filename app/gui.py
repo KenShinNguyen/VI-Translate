@@ -12,6 +12,8 @@ import os
 import queue
 import sys
 import threading
+import traceback
+from datetime import datetime
 from pathlib import Path
 
 import customtkinter as ctk
@@ -48,11 +50,12 @@ LANGUAGE_NAMES = {
     "vi": "Tiếng Việt",
 }
 
-STATUS_MARKS = {"queued": "•", "running": "▶", "done": "✓", "failed": "✕", "skipped": "–"}
+STATUS_MARKS = {"queued": "•", "running": "▶", "done": "✓", "partial": "!", "failed": "✕", "skipped": "–"}
 STATUS_COLORS = {
     "queued": ("gray50", "gray60"),
     "running": ("#1f6feb", "#58a6ff"),
     "done": ("#1a7f37", "#3fb950"),
+    "partial": ("#9a6700", "#d29922"),
     "failed": ("#cf222e", "#f85149"),
     "skipped": ("gray50", "gray60"),
 }
@@ -238,6 +241,8 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
                 font=ctk.CTkFont(self.mono_font, size=12),
                 text_color=STATUS_COLORS["queued"],
                 anchor="w",
+                justify="left",
+                wraplength=520,
             )
             row.grid(sticky="ew", padx=6, pady=2)
             self.rows[path] = row
@@ -267,22 +272,47 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
     def _run(self, files: list[Path], language: str, overwrite: bool) -> None:
         for index, path in enumerate(files, 1):
             self.events.put(("status", path, "running", ""))
+            destination = path.parent / "translated"
             try:
-                output = translate_pdf(
+                result = translate_pdf(
                     path,
-                    path.parent / "translated",
+                    destination,
                     target_language=language,
                     overwrite=overwrite,
                 )
-                self.events.put(("status", path, "done", str(output)))
+                detail = (
+                    f"{result.untranslated} đoạn chưa dịch được"
+                    if result.untranslated
+                    else str(result.path)
+                )
+                state = "partial" if result.untranslated else "done"
+                self.events.put(("status", path, state, detail))
             except TranslationError as error:
                 # One unreadable or already-translated file must not stop the batch.
                 state = "skipped" if "already exists" in str(error) else "failed"
+                if state == "failed":
+                    self._log_failure(destination, path, error)
                 self.events.put(("status", path, state, str(error)))
             except Exception as error:  # noqa: BLE001 - keep the queue moving
-                self.events.put(("status", path, "failed", repr(error)))
+                self._log_failure(destination, path, error)
+                self.events.put(("status", path, "failed", f"{type(error).__name__}: {error}"))
             self.events.put(("progress", index / len(files)))
         self.events.put(("finished",))
+
+    @staticmethod
+    def _log_failure(destination: Path, source: Path, error: BaseException) -> None:
+        """Append the full traceback to a log file the user can send back.
+
+        The queue row only has space for one line, which is never enough to
+        diagnose a failure on someone else's document.
+        """
+        try:
+            destination.mkdir(parents=True, exist_ok=True)
+            with (destination / "pdf-translate.log").open("a", encoding="utf-8") as log:
+                log.write(f"\n{'=' * 70}\n{datetime.now():%Y-%m-%d %H:%M:%S}  {source}\n")
+                traceback.print_exception(type(error), error, error.__traceback__, file=log)
+        except OSError:
+            pass  # a failure to log must never mask the failure being logged
 
     def _drain_events(self) -> None:
         while True:
@@ -295,8 +325,8 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
                 self.states[path] = state
                 row = self.rows[path]
                 text = f"{STATUS_MARKS[state]}  {path.name}"
-                if state in ("failed", "skipped") and detail:
-                    text += f"   {detail.splitlines()[0][:70]}"
+                if state in ("failed", "skipped", "partial") and detail:
+                    text += f"\n     {detail.splitlines()[0]}"
                 row.configure(text=text, text_color=STATUS_COLORS[state])
             elif event[0] == "progress":
                 self.progress.set(event[1])

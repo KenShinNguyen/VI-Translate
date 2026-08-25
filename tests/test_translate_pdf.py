@@ -25,6 +25,7 @@ class TranslatePdfTests(unittest.TestCase):
         (Path(temp_output) / f"{Path(source).stem}-mono.pdf").write_bytes(
             b"%PDF-1.7\ntranslated"
         )
+        return 0  # the real runner returns the untranslated segment count
 
     @mock.patch.object(translate_pdf, "_require_core")
     @mock.patch.object(translate_pdf, "_run_engine")
@@ -33,8 +34,9 @@ class TranslatePdfTests(unittest.TestCase):
 
         result = translate_pdf.translate_pdf(self.source, self.output)
 
-        self.assertEqual(result, self.output / "guide-vi.pdf")
-        self.assertEqual(result.read_bytes(), b"%PDF-1.7\ntranslated")
+        self.assertEqual(result.path, self.output / "guide-vi.pdf")
+        self.assertEqual(result.untranslated, 0)
+        self.assertEqual(result.path.read_bytes(), b"%PDF-1.7\ntranslated")
         run.assert_called_once_with(
             self.source, mock.ANY, "vi", "auto", None, 2, False, "google", {}
         )
@@ -112,6 +114,21 @@ class TranslatePdfTests(unittest.TestCase):
             ignore_cache=True,
         )
 
+    def test_reports_segments_the_engine_could_not_translate(self):
+        def partial(source, temp_output, *_args):
+            (Path(temp_output) / f"{Path(source).stem}-mono.pdf").write_bytes(b"%PDF-1.7\n")
+            return 7
+
+        with (
+            mock.patch.object(translate_pdf, "_require_core"),
+            mock.patch.object(translate_pdf, "_run_engine", side_effect=partial),
+        ):
+            result = translate_pdf.translate_pdf(self.source, self.output)
+
+        # A document that lost some segments must still be delivered, and say so.
+        self.assertEqual(result.path, self.output / "guide-vi.pdf")
+        self.assertEqual(result.untranslated, 7)
+
     def test_target_language_is_limited_to_latin_script(self):
         self.assertEqual(translate_pdf._target_language("FR"), "fr")
         for rejected in ("zh", "ja", "ko", "ar", "he", "th", "hi"):
@@ -128,7 +145,7 @@ class TranslatePdfTests(unittest.TestCase):
             result = translate_pdf.translate_pdf(
                 self.source, self.output, target_language="fr"
             )
-        self.assertEqual(result, self.output / "guide-fr.pdf")
+        self.assertEqual(result.path, self.output / "guide-fr.pdf")
 
     def test_handoff_flags_are_rejected_for_the_google_engine(self):
         args = translate_pdf._parser().parse_args(

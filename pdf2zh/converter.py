@@ -13,7 +13,7 @@ from pdfminer.pdffont import PDFCIDFont, PDFUnicodeNotDefined
 from pdfminer.pdfinterp import PDFGraphicState, PDFResourceManager
 from pdfminer.utils import apply_matrix_pt, mult_matrix
 from pymupdf import Font
-from tenacity import retry, stop_after_attempt, wait_fixed
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 from pdf2zh.rules import BULLET_CHARACTERS, is_formula_font, line_height_for_language
 from pdf2zh.translator import ENGINES, BaseTranslator
@@ -130,6 +130,8 @@ class TranslateConverter(PDFConverterEx):
         self.noto = noto
         self.translator: BaseTranslator = None
         self.scanned_pages: set = set()
+        # Segments whose retries ran out; reported as a partial translation.
+        self.translation_failures: list[str] = []
         # e.g. "handoff:model" -> ["handoff", "model"]; model is unused by both engines
         param = service.split(":", 1)
         service_name = param[0]
@@ -332,19 +334,32 @@ class TranslateConverter(PDFConverterEx):
         # B. 段落翻译
         log.debug("\n==========[SSTACK]==========\n")
 
-        @retry(wait=wait_fixed(1), stop=stop_after_attempt(5), reraise=True)
-        def worker(s: str):  # 多线程翻译
+        # Google throttles a long document, so back off instead of hammering it.
+        # Roughly two minutes of patience per segment, then give up rather than
+        # hang the run forever the way an unbounded retry used to.
+        @retry(
+            wait=wait_exponential(multiplier=1, min=1, max=60),
+            stop=stop_after_attempt(8),
+            reraise=True,
+        )
+        def translate_segment(s: str) -> str:
+            return self.translator.translate(s)
+
+        def worker(s: str) -> str:
             if not s.strip() or re.match(r"^\{v\d+\}$", s):  # 空白和公式不翻译
                 return s
             try:
-                new = self.translator.translate(s)
-                return new
+                return translate_segment(s)
             except BaseException as e:
+                # A book is thousands of segments over tens of minutes, so one
+                # dead connection must not throw the whole document away. Keep
+                # the source text and let the caller report how much is missing.
                 if log.isEnabledFor(logging.DEBUG):
                     log.exception(e)
                 else:
                     log.exception(e, exc_info=False)
-                raise e
+                self.translation_failures.append(s)
+                return s
         with concurrent.futures.ThreadPoolExecutor(
             max_workers=self.thread
         ) as executor:

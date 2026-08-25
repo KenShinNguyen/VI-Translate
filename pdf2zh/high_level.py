@@ -292,7 +292,7 @@ def translate_patch(
             interpreter.process_page(page)
 
     device.close()
-    return obj_patch
+    return obj_patch, device.translation_failures
 
 
 def translate_stream(
@@ -358,7 +358,7 @@ def translate_stream(
     fp = io.BytesIO()
 
     doc_zh.save(fp)
-    obj_patch: dict = translate_patch(fp, **locals())
+    obj_patch, translation_failures = translate_patch(fp, **locals())
 
     for obj_id, ops_new in obj_patch.items():
         # ops_old=doc_en.xref_stream(obj_id)
@@ -376,6 +376,7 @@ def translate_stream(
     return (
         doc_zh.write(deflate=True, garbage=3, use_objstms=1),
         doc_en.write(deflate=True, garbage=3, use_objstms=1),
+        translation_failures,
     )
 
 
@@ -498,15 +499,22 @@ def translate(
             temporary_path.unlink(missing_ok=True)
 
         try:
-            s_mono, _s_dual = translate_stream(
+            s_mono, _s_dual, translation_failures = translate_stream(
                 s_raw,
                 **locals(),
             )
+            if translation_failures:
+                logger.warning(
+                    "%d of the segments in %s could not be translated and were left "
+                    "in the source language",
+                    len(translation_failures),
+                    source_path,
+                )
             file_mono = Path(output) / f"{filename}-mono.pdf"
             doc_mono = open(file_mono, "wb")
             doc_mono.write(s_mono)
             doc_mono.close()
-            result_files.append((str(file_mono), ""))
+            result_files.append((str(file_mono), len(translation_failures)))
         except Exception as error:
             raise PDFValueError(f"Failed to translate {source_path}") from error
 
