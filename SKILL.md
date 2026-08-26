@@ -1,87 +1,120 @@
 ---
 name: pdf-translate
-description: Translate text-based PDFs into Vietnamese or another Latin-script language while preserving document layout, formulas, tables, and figures. Offers a fast Google Translate mode and an advanced mode where the agent translates the extracted segments itself. Use for PDF translation requests; do not use when OCR is required, or when the target language uses a CJK, right-to-left, or complex-shaping script.
+description: Translate local, text-based PDFs into Vietnamese or another supported Latin-script language while preserving the original layout, formulas, tables, and figures. Use for PDF translation, batch translation, terminology-sensitive handoff translation, or diagnosing incomplete translated output. Do not use for image-only scans that need OCR or targets requiring CJK, right-to-left, or complex-script shaping.
+license: AGPL-3.0-only
 ---
 
 # PDF Translate
 
-Translate a local, text-based PDF into a new PDF that keeps the original layout, formulas, tables, and figures. Two modes share one engine and one preservation contract:
+Translate a PDF with the bundled Code4Life engine. Keep the source file unchanged and produce a separate PDF with the same page structure.
 
-| Mode | Translated by | Cost | Use when |
-| --- | --- | --- | --- |
-| **Google** (default) | `translate.google.com` | Free, no tokens | Whole books, bulk batches, first drafts |
-| **Handoff** (advanced) | You, in this conversation | Tokens and wall-clock time | Documents where terminology and context matter |
+## Resolve the skill root
 
-Default to Google mode. Offer handoff mode when the user asks for higher quality, complains about the Google output, or the document is short and technical.
+This skill may be installed globally while the user's files live elsewhere. Resolve the absolute directory containing this `SKILL.md` before running anything. Call its scripts and dependency files by absolute path; do not assume the current working directory is the skill directory.
+
+Use the interpreter inside `<skill-root>/.venv`:
+
+- Windows: `<skill-root>\.venv\Scripts\python.exe`
+- macOS/Linux: `<skill-root>/.venv/bin/python`
+
+## Choose a mode
+
+| Mode | Translator | Use when |
+| --- | --- | --- |
+| Google (default) | `translate.google.com` | Books, batches, first drafts, or low token use |
+| Handoff | The active agent | Terminology, context, or translation quality matters |
+
+Default to Google. Offer handoff when the user asks for higher quality, rejects the Google result, or provides a short technical document.
 
 ## Boundaries
 
-- The bundled `pdf2zh/` core owns the preservation behavior. Never install or invoke the PyPI `pdf2zh` wheel as the translation engine; doing so bypasses the Code4Life rules.
-- **Google mode sends the extracted document text over the network to Google.** Tell the user before processing sensitive material, and require explicit confirmation when the request did not already authorize that disclosure. Handoff mode sends nothing to Google.
-- Target languages are limited to Latin-script codes. The bundled font has no CJK glyphs, and the layout engine writes left-to-right without complex shaping, so Chinese, Japanese, Korean, Arabic, Hebrew, Thai, and Devanagari are refused rather than emitted as blank boxes or reordered text.
-- The runner does not perform OCR. If the source contains only scanned page images, report that OCR is required instead of claiming the unchanged images were translated.
-- The layout engine can preserve source-language text inside detected tables or figures instead of translating it. Compare source and output text, and report affected content as partial translation rather than hiding the limitation.
-- Preserve the source PDF. Write the translated file to a separate output directory and do not overwrite an existing result unless the user explicitly requests replacement.
+- Use the bundled `pdf2zh/` core. Never substitute the PyPI `pdf2zh` package; the runner checks version `1.9.11` and preservation ruleset `code4life-preservation-v1` and refuses an external core.
+- Google mode sends extracted document text to Google. Tell the user before processing sensitive material and obtain explicit confirmation unless their request already authorizes that disclosure. Handoff mode does not contact Google.
+- Supported targets are the Latin-script codes enforced by `scripts/translate_pdf.py`. CJK, right-to-left, Thai, Devanagari, and other complex-shaping targets are rejected because the bundled font and layout engine cannot render them reliably.
+- There is no OCR. If a source page is image-only, report that OCR is required instead of claiming it was translated.
+- Text inside detected tables, figures, contents pages, indexes, symbol lists, or references may intentionally remain in the source language. Report material untranslated regions as partial translation.
+- Preserve the source. Write results to a separate output directory. Do not pass `--overwrite` without explicit replacement authorization.
 
-Read [the preservation contract](references/preservation-rules.md) when reviewing layout behavior, changing the core, or diagnosing an untranslated region.
+Read [the preservation contract](references/preservation-rules.md) before changing layout behavior, diagnosing preserved pages, or investigating untranslated regions.
 
-## Setup
+## Set up the runtime
 
-Use Python 3.11 or 3.12. Keep runtime packages isolated in `.venv` under this skill directory and install the pinned dependencies from `requirements.txt` when the environment is missing or stale. The first translation downloads layout and font assets, so it needs extra network access and takes longer than later runs.
+Use Python 3.11 or 3.12. Create `<skill-root>/.venv` and install `<skill-root>/requirements.txt` if the environment is absent or stale. Keep this environment separate from the user's project.
 
-```powershell
-python -m venv .venv
-.venv\Scripts\python.exe -m pip install -r requirements.txt
-```
+The source distribution downloads layout and font assets on its first translation, so the first run needs network access and takes longer. The packaged Windows app already contains these assets.
 
-On POSIX systems use `.venv/bin/python` instead.
-
-Shared options: `--target-language` (default `vi`), `--source-language auto`, one-based `--pages 1,3-5`, `--threads 1..4`, `--ignore-cache`, `--overwrite`. Use `--overwrite` only with explicit replacement authorization.
-
-## Mode 1 - Google (default)
-
-One command per file. For a batch, loop and report progress per file rather than running them all silently.
+Windows:
 
 ```powershell
-.venv\Scripts\python.exe scripts\translate_pdf.py INPUT.pdf --output-dir OUTPUT_DIR
+python -m venv "<skill-root>\.venv"
+& "<skill-root>\.venv\Scripts\python.exe" -m pip install -r "<skill-root>\requirements.txt"
 ```
 
-A failure on one file must not stop the batch: record it, continue, and list every failure at the end.
+macOS/Linux:
 
-## Mode 2 - Handoff (advanced)
+```bash
+python3 -m venv "<skill-root>/.venv"
+"<skill-root>/.venv/bin/python" -m pip install -r "<skill-root>/requirements.txt"
+```
 
-You translate the segments yourself. The engine extracts them, you fill them in, the engine rebuilds the PDF. Nothing is sent to Google.
+Shared runner options include `--target-language` (default `vi`), `--source-language auto`, one-based `--pages 1,3-5`, `--threads 1..8` (default `4`), `--ignore-cache`, and `--overwrite`.
 
-**Warn about cost before starting.** A 300-page book is thousands of segments. Suggest `--pages 1-5` first so the user can judge quality on a sample.
+## Google mode
 
-**Step 1 - extract.** No `--output-dir` is needed; the pass-one PDF is discarded.
+Run one command per file. Use absolute paths for the input and output directory.
+
+Windows:
 
 ```powershell
-.venv\Scripts\python.exe scripts\translate_pdf.py INPUT.pdf --engine handoff --emit-segments segments.jsonl
+& "<skill-root>\.venv\Scripts\python.exe" "<skill-root>\scripts\translate_pdf.py" "<input.pdf>" --output-dir "<output-dir>"
 ```
 
-**Step 2 - translate.** `segments.jsonl` holds one `{"src": "..."}` record per line. Read it in batches of roughly 150 records and write `translations.jsonl` with one `{"src": "...", "dst": "..."}` record per line, where `src` is copied **byte for byte** from the input.
+macOS/Linux:
 
-**Formula placeholders are the one thing that must not change.** Segments contain tags like `<b0></b0>` standing in for formulas, code, and inline math. Every `<bN>` and `</bN>` tag must survive translation with the **same count, same identifiers, and same order**. A segment whose placeholders do not match its source is rejected at load time and left untranslated, so the formula would silently vanish from the output.
-
-Also keep URLs, file paths, identifiers, citation markers, and numbers unchanged.
-
-**Step 3 - rebuild.** Emitting misses again turns this into a loop.
-
-```powershell
-.venv\Scripts\python.exe scripts\translate_pdf.py INPUT.pdf --engine handoff `
-  --segments translations.jsonl --output-dir OUTPUT_DIR --emit-segments still-missing.jsonl
+```bash
+"<skill-root>/.venv/bin/python" "<skill-root>/scripts/translate_pdf.py" "<input.pdf>" --output-dir "<output-dir>"
 ```
 
-**Step 4 - close the loop.** The command prints how many segments are still untranslated. If that count is not zero, translate `still-missing.jsonl`, append the results to `translations.jsonl`, and run step 3 again. Repeat until the count reaches zero, or tell the user which segments you could not translate and why.
+For a batch, process files individually and report progress. A failure on one file must not stop the remaining files; collect and report all failures at the end.
 
-Note that step 1 runs the full layout pass a second time, so a handoff translation takes roughly twice the local compute of a Google run.
+## Handoff mode
 
-## Verify
+Handoff extracts translatable segments to JSONL, lets the active agent translate them, then rebuilds the PDF. Warn about token and time cost before starting a large document. For long documents, suggest a representative sample such as `--pages 1-5` first.
 
-Before delivery, for either mode:
+### 1. Extract
 
-1. Reopen the output and confirm its page count matches the source.
-2. Extract text from the source and output, scan every page for substantial untranslated passages, and confirm formulas, URLs, and identifiers remain recognizable.
-3. Render every output page to PNG and inspect for clipped text, overlaps, missing glyphs, blank pages, or displaced figures and tables.
-4. If any page fails visual inspection, keep the source and failed output, report the affected pages, and do not present the translation as complete.
+An output directory is not required during extraction because the pass-one PDF is discarded.
+
+```text
+<python> <skill-root>/scripts/translate_pdf.py <input.pdf> --engine handoff --emit-segments <segments.jsonl>
+```
+
+### 2. Translate
+
+Read `segments.jsonl` in manageable batches. Write one JSON object per line to `translations.jsonl`:
+
+```json
+{"src":"exact source text","dst":"translated text"}
+```
+
+Copy each `src` value exactly. Preserve URLs, paths, identifiers, citation markers, and numbers.
+
+Formula and code placeholders such as `<b0></b0>` are immutable. Every opening and closing tag must retain the same identifier, count, and order as the source. The loader rejects a record whose placeholders differ, leaving that segment untranslated.
+
+### 3. Rebuild
+
+```text
+<python> <skill-root>/scripts/translate_pdf.py <input.pdf> --engine handoff --segments <translations.jsonl> --output-dir <output-dir> --emit-segments <still-missing.jsonl>
+```
+
+The command prints the remaining untranslated segment count. If it is nonzero, translate `still-missing.jsonl`, append valid records to `translations.jsonl`, and rebuild again. Stop only at zero or when a segment cannot be translated safely; then report the exact remaining limitation.
+
+Extraction and rebuild each run the layout pass, so handoff uses roughly twice the local PDF processing of Google mode in addition to the agent's translation work.
+
+## Verify before delivery
+
+1. Confirm the output exists and the source still exists unchanged.
+2. Confirm source and output page counts match.
+3. Extract text page by page and check for substantial untranslated passages, missing formulas, damaged URLs, or lost identifiers.
+4. When page rendering or image inspection is available, render every output page and inspect for blank pages, missing glyphs, clipping, overlap, and displaced tables or figures.
+5. If full visual inspection is unavailable, say which checks were completed. Do not present a partially verified or partially translated file as fully complete.

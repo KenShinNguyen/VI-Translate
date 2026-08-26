@@ -42,20 +42,34 @@ Trang mục lục, index, danh mục ký hiệu và tài liệu tham khảo đư
 
 Đoạn văn dài quá 5000 ký tự bị cắt bớt. Trường hợp này hiếm, vì mỗi đoạn thường ngắn hơn nhiều.
 
-Công thức phân số nằm giữa dòng chữ đôi khi bị chữ phía sau đè lên. Bản dịch dài ngắn khác nhau nên công thức rơi vào vị trí khác so với bản gốc, và bộ dàn chữ chưa chừa đủ chỗ cho những công thức cao. Lỗi này rải rác, không phải trang nào cũng có. Nếu tài liệu của bạn dày đặc công thức nội dòng thì nên xem lại kết quả.
+Công thức phân số nằm giữa dòng chữ được chừa chỗ theo chiều cao thật của nó, nhưng chỗ chừa chỉ lấy được trong phần trống còn lại của đoạn văn. Đoạn nào vốn đã chật thì mẫu số vẫn hơi sát dòng bên dưới. Vẫn đọc được, chỉ là không thoáng bằng bản gốc.
 
-## Dùng trong Claude Code
+## Dùng như Agent Skill
 
-Repo này đồng thời là một skill. Clone về thư mục skills rồi cài:
+Repo này đồng thời là một [Agent Skill](https://agentskills.io/), dùng chung được với Codex, Claude Code, GitHub Copilot và các coding agent hỗ trợ chuẩn `SKILL.md`.
+
+Cài cho tất cả agent mà máy đang có:
+
+```powershell
+npx skills add breslee1707/VI-Translate -g --all
+```
+
+Lệnh trên giữ một nguồn skill duy nhất rồi đăng ký nó vào đúng thư mục của từng agent, tránh phải duy trì nhiều bản `SKILL.md`. Nếu chỉ muốn cài cho một agent, thêm `--agent codex`, `--agent claude-code` hoặc tên agent tương ứng thay cho `--all`.
+
+Skill tự tạo môi trường Python riêng trong thư mục cài đặt. Nếu muốn chuẩn bị thủ công:
 
 ```powershell
 python -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-Gọi trong chat:
+Gọi trong Codex:
 
 > Use $pdf-translate to translate this PDF into Vietnamese.
+
+Trong Claude Code hoặc Copilot CLI:
+
+> /pdf-translate translate this PDF into Vietnamese.
 
 Ở đây có hai chế độ dịch:
 
@@ -66,7 +80,7 @@ Gọi trong chat:
 
 Google là chế độ mặc định, và cũng là chế độ duy nhất bản app desktop dùng, vì một file exe không có agent để gọi.
 
-Chế độ handoff trích toàn bộ đoạn văn ra file JSONL, agent dịch ngay trong khung chat, rồi công cụ dựng lại PDF. Không gửi gì lên Google. Chênh lệch chất lượng thấy rõ ở tài liệu chuyên ngành. Ví dụ với một văn bản về truyền nhiệt, cùng từ *conduction*:
+Chế độ handoff trích toàn bộ đoạn văn ra file JSONL, coding agent đang chạy sẽ dịch ngay trong phiên làm việc rồi công cụ dựng lại PDF. Không gửi gì lên Google. Chênh lệch chất lượng thấy rõ ở tài liệu chuyên ngành. Ví dụ với một văn bản về truyền nhiệt, cùng từ *conduction*:
 
 | | Kết quả |
 | --- | --- |
