@@ -1,4 +1,6 @@
+import copy
 import logging
+import math
 from typing import Any, Dict, Optional, Sequence, Tuple, cast
 
 import numpy as np
@@ -114,6 +116,13 @@ class PDFPageInterpreterEx(PDFPageInterpreter):
         """Stroke path"""
 
         def is_black(color: Color) -> bool:
+            if color is None:
+                # TeX never emits a stroking-colour operator for a fraction
+                # rule, and PDF's initial stroking colour is black. Reading the
+                # unset state as "not black" left every inline fraction bar
+                # behind at its source position, striking through the reflowed
+                # translation.
+                return True
             if isinstance(color, Tuple):
                 return sum(color) == 0
             else:
@@ -127,8 +136,12 @@ class PDFPageInterpreterEx(PDFPageInterpreter):
             == apply_matrix_pt(self.ctm, self.curpath[1][-2:])[1]
             and is_black(self.graphicstate.scolor)
         ):  # 独立直线，水平，黑色
-            # print(apply_matrix_pt(self.ctm,self.curpath[0][-2:]),apply_matrix_pt(self.ctm,self.curpath[1][-2:]),self.graphicstate.scolor)
-            self.device.paint_path(self.graphicstate, True, False, False, self.curpath)
+            # pdfminer records the raw `w` operand, but the path is drawn
+            # under this CTM (TeX scales by 0.1), and the redrawn rule gets no
+            # CTM. Bake the scale in or the bar comes out ten times too fat.
+            gs = copy.copy(self.graphicstate)
+            gs.linewidth *= math.hypot(self.ctm[0], self.ctm[1])
+            self.device.paint_path(gs, True, False, False, self.curpath)
             self.curpath = []
             return "n"
         else:

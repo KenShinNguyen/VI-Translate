@@ -658,8 +658,25 @@ class TranslateConverter(PDFConverterEx):
                     "lidx": lidx
                 })
 
+            # An inline formula keeps the vertical offsets it had in the source,
+            # so a fraction reaches far below its baseline while the prose around
+            # it does not. Uniform leading therefore let the next line print
+            # straight through the denominator. Measure what each line actually
+            # occupies above and below its own baseline, and open up only the
+            # gaps that need it.
+            ink: dict[int, tuple[float, float]] = {}
+            for vals in ops_vals:
+                s_ = vals["size"] if vals["type"] == OpType.TEXT else 0.0
+                lo = vals["dy"] + min(0.0, vals.get("ylen", 0.0)) - 0.22 * s_
+                hi = vals["dy"] + max(0.0, vals.get("ylen", 0.0)) + 0.78 * s_
+                plo, phi = ink.get(vals["lidx"], (lo, hi))
+                ink[vals["lidx"]] = (min(plo, lo), max(phi, hi))
+
             line_height = default_line_height
 
+            # Fit the prose to the box on its own. Charging the formula's extra
+            # room to this loop drops the leading for every line in the
+            # paragraph, until they collide with each other instead.
             while (lidx + 1) * size * line_height > height and line_height >= 0.8:
                 line_height -= 0.05
 
@@ -672,11 +689,17 @@ class TranslateConverter(PDFConverterEx):
                     if vals["type"] == OpType.TEXT:
                         vals["size"] *= shrink
 
+            # ponytail: the paragraph's own box is the whole budget, so a
+            # formula in an already tight paragraph stays somewhat cramped.
+            # Measuring the gap down to the next paragraph would buy the rest.
+            offsets = line_offsets(ink, lidx, size, line_height,
+                                   budget=height - (lidx + 1) * size * line_height)
+
             for vals in ops_vals:
                 if vals["type"] == OpType.TEXT:
-                    ops_list.append(gen_op_txt(vals["font"], vals["size"], vals["x"], vals["dy"] + y - vals["lidx"] * size * line_height, vals["rtxt"]))
+                    ops_list.append(gen_op_txt(vals["font"], vals["size"], vals["x"], vals["dy"] + y - offsets[vals["lidx"]], vals["rtxt"]))
                 elif vals["type"] == OpType.LINE:
-                    ops_list.append(gen_op_line(vals["x"], vals["dy"] + y - vals["lidx"] * size * line_height, vals["xlen"], vals["ylen"], vals["linewidth"]))
+                    ops_list.append(gen_op_line(vals["x"], vals["dy"] + y - offsets[vals["lidx"]], vals["xlen"], vals["ylen"], vals["linewidth"]))
 
         for l in lstk:  # 排版全局线条
             if l.linewidth < 5:  # hack 有的文档会用粗线条当图片背景
@@ -684,6 +707,39 @@ class TranslateConverter(PDFConverterEx):
 
         ops = f"{white_rects}BT {''.join(ops_list)}ET "
         return ops
+
+
+def line_offsets(
+    ink: dict[int, tuple[float, float]],
+    lines: int,
+    size: float,
+    line_height: float,
+    budget: float | None = None,
+) -> list[float]:
+    """Distance from a paragraph's first baseline down to each later baseline.
+
+    `ink[i]` is how far line i's glyphs reach below and above its own baseline.
+    Prose lines get the usual leading; a line holding a tall inline formula gets
+    the extra room its glyphs and its neighbour's need, so a fraction's
+    denominator no longer lands on the line underneath. `budget` caps that extra
+    at the space the paragraph has left, because spilling onto the paragraph
+    below looks worse than a formula that is still a little tight.
+    """
+    base = size * line_height
+    want = [
+        max(0.0, (ink.get(i + 1, (0.0, 0.0))[1] - ink.get(i, (0.0, 0.0))[0]) - base)
+        for i in range(lines)
+    ]
+    total = sum(want)
+    if budget is not None and total > budget:
+        # Not enough slack for every tall formula. Share out what there is
+        # rather than growing the paragraph down over the text below it.
+        scale = max(0.0, budget) / total
+        want = [w * scale for w in want]
+    offsets = [0.0]
+    for extra in want:
+        offsets.append(offsets[-1] + base + extra)
+    return offsets
 
 
 class OpType(Enum):
