@@ -1,111 +1,190 @@
-# VI Translate
+<p align="center">
+  <img src=".github/assets/logo.png" alt="PDF Translate logo" width="160">
+</p>
 
-Dịch file PDF sang tiếng Việt nhưng giữ nguyên bố cục trang. Công thức toán, bảng, hình, mục lục và danh mục tài liệu tham khảo vẫn nằm đúng chỗ cũ.
+<h1 align="center">PDF Translate</h1>
 
-Công cụ không trích chữ ra dịch rồi đổ vào một file trắng. Nó dò bố cục từng trang, khoanh vùng công thức và code để không đụng tới, dịch phần văn xuôi, rồi đặt chữ đã dịch trở lại đúng khung của bản gốc.
+<p align="center">
+  <strong>Dịch tài liệu PDF sang tiếng Việt và 35 ngôn ngữ khác<br>mà vẫn giữ nguyên bố cục, công thức, bảng và hình ảnh.</strong>
+</p>
 
-## Tải về
+<p align="center">
+  <a href="https://github.com/breslee1707/VI-Translate/releases/latest/download/PDFTranslate-windows.zip">
+    <img src="https://img.shields.io/badge/TẢI_XUỐNG-Windows_x64-1f6feb?style=for-the-badge&logo=windows11&logoColor=white" alt="Tải PDF Translate cho Windows">
+  </a>
+</p>
 
-[Tải bản mới nhất ở đây](https://github.com/breslee1707/VI-Translate/releases/latest), giải nén, chạy `PDFTranslate.exe`.
+<p align="center">
+  <a href="https://github.com/breslee1707/VI-Translate/releases/latest"><img src="https://img.shields.io/github/v/release/breslee1707/VI-Translate?style=flat-square&label=release" alt="Bản phát hành mới nhất"></a>
+  <a href="https://github.com/breslee1707/VI-Translate/releases"><img src="https://img.shields.io/github/downloads/breslee1707/VI-Translate/total?style=flat-square&label=downloads" alt="Tổng lượt tải"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/breslee1707/VI-Translate?style=flat-square" alt="Giấy phép AGPL-3.0"></a>
+  <img src="https://img.shields.io/badge/Python-không_cần_cài-2ea44f?style=flat-square" alt="Không cần cài Python">
+</p>
 
-Không cần cài Python. Lần chạy đầu cũng không cần mạng, vì model nhận diện bố cục và font đã nằm sẵn trong file tải về. Bản nén 198 MB, giải nén ra 382 MB.
+<p align="center">
+  <a href="#điểm-nổi-bật">Điểm nổi bật</a> ·
+  <a href="#bắt-đầu-trong-1-phút">Cài đặt</a> ·
+  <a href="#cách-sử-dụng">Cách dùng</a> ·
+  <a href="#dùng-như-agent-skill">Agent Skill</a> ·
+  <a href="#giới-hạn-hiện-tại">Giới hạn</a>
+</p>
 
-Lần đầu mở, Windows SmartScreen sẽ chặn vì file chưa ký số. Bấm *More info* rồi *Run anyway*.
+---
 
-Hiện chỉ có bản Windows.
+PDF Translate là ứng dụng desktop mã nguồn mở dành cho Windows. Công cụ phân tích bố cục từng trang, bảo vệ công thức và code, dịch phần văn xuôi rồi đặt nội dung trở lại đúng vị trí trong tài liệu gốc — không biến PDF của bạn thành một trang chữ trắng đơn giản.
 
-## Cách dùng
+## Điểm nổi bật
 
-Đưa file vào bằng một trong ba cách:
+- **Giữ nguyên bố cục:** bảo toàn vị trí của đoạn văn, công thức, bảng, hình, mục lục và tài liệu tham khảo.
+- **Sẵn sàng để dùng:** tải về, giải nén và chạy; không cần cài Python hay model riêng.
+- **Xử lý hàng loạt:** kéo thả nhiều file PDF hoặc cả thư mục vào ứng dụng.
+- **36 ngôn ngữ đích:** mặc định là tiếng Việt, cùng nhiều ngôn ngữ sử dụng chữ Latin.
+- **Không dừng cả hàng đợi:** một file lỗi không làm gián đoạn các file còn lại.
+- **Có chế độ dành cho AI agent:** dùng model trong Codex, Claude Code hoặc Copilot để dịch tài liệu chuyên ngành tốt hơn.
 
-- Kéo thả file PDF hoặc cả thư mục vào cửa sổ app
-- Bấm nút *Chọn file* hoặc *Chọn thư mục*
-- Thả file thẳng lên icon `PDFTranslate.exe`
+## Bắt đầu trong 1 phút
 
-Chọn ngôn ngữ rồi bấm *Dịch*. App chạy lần lượt từng file, kết quả ghi vào thư mục `translated` nằm cạnh file nguồn. Nếu một file bị lỗi thì app đánh dấu file đó rồi chạy tiếp, không dừng cả loạt.
+1. **[Tải PDF Translate cho Windows](https://github.com/breslee1707/VI-Translate/releases/latest/download/PDFTranslate-windows.zip)** (`.zip`, khoảng 199 MB).
+2. Giải nén toàn bộ file vừa tải.
+3. Mở `PDFTranslate.exe`.
 
-Muốn dịch lại một file đã có kết quả thì tick ô *Ghi đè file đã dịch trước đó*. Mặc định app không ghi đè.
+> [!NOTE]
+> Ứng dụng hiện chỉ hỗ trợ **Windows 64-bit**. Bản desktop không cần cài Python và không phải tải thêm model ở lần chạy đầu. Quá trình dịch bằng Google vẫn cần kết nối Internet.
 
-## Ngôn ngữ
+> [!WARNING]
+> Windows SmartScreen có thể cảnh báo vì ứng dụng chưa được ký số. Chọn **More info** → **Run anyway** nếu bạn tải file từ trang Releases chính thức của repo này.
 
-Mặc định là tiếng Việt. Trong app có sẵn 36 ngôn ngữ dùng chữ Latin: Anh, Pháp, Đức, Tây Ban Nha, Bồ Đào Nha, Ý, Indonesia, Hà Lan, Ba Lan, Thổ Nhĩ Kỳ cùng các thứ tiếng châu Âu khác.
+Bạn cũng có thể mở [trang Releases](https://github.com/breslee1707/VI-Translate/releases/latest) để xem ghi chú thay đổi và các tệp của phiên bản mới nhất.
 
-Không hỗ trợ tiếng Trung, Nhật, Hàn, Ả Rập, Do Thái, Thái và các chữ Ấn Độ. Font đi kèm không có glyph cho những chữ đó. App sẽ báo lỗi rõ ràng thay vì cho ra một file đầy ô vuông.
+## Cách sử dụng
 
-## Những gì công cụ không làm được
+### 1. Thêm tài liệu
 
-Không có OCR. Nếu file PDF chỉ là ảnh scan, không có lớp chữ bên dưới, thì công cụ không dịch được. Bạn cần chạy OCR trước.
+Chọn một trong ba cách:
 
-Chữ nằm trong vùng mà công cụ nhận diện là bảng hoặc hình đôi khi bị giữ nguyên tiếng gốc. Nên mở file kết quả kiểm tra lại.
+- Kéo thả file PDF hoặc cả thư mục vào cửa sổ ứng dụng.
+- Bấm **Chọn file** hoặc **Chọn thư mục**.
+- Thả file trực tiếp lên `PDFTranslate.exe`.
 
-Trang mục lục, index, danh mục ký hiệu và tài liệu tham khảo được cố ý giữ nguyên bố cục, không dàn lại dòng. Lý do và chi tiết nằm ở [references/preservation-rules.md](references/preservation-rules.md).
+### 2. Chọn ngôn ngữ
 
-Đoạn văn dài quá 5000 ký tự bị cắt bớt. Trường hợp này hiếm, vì mỗi đoạn thường ngắn hơn nhiều.
+Chọn ngôn ngữ đích trong mục **Dịch sang**. Ứng dụng mặc định dịch sang **Tiếng Việt**.
 
-Công thức phân số nằm giữa dòng chữ được chừa chỗ theo chiều cao thật của nó, nhưng chỗ chừa chỉ lấy được trong phần trống còn lại của đoạn văn. Đoạn nào vốn đã chật thì mẫu số vẫn hơi sát dòng bên dưới. Vẫn đọc được, chỉ là không thoáng bằng bản gốc.
+### 3. Bắt đầu dịch
+
+Bấm **Dịch**. Các file được xử lý lần lượt và hiển thị trạng thái ngay trong hàng đợi.
+
+Kết quả được lưu tự động vào thư mục `translated` nằm cạnh file nguồn:
+
+```text
+TaiLieu/
+├── document.pdf
+└── translated/
+    └── document-vi.pdf
+```
+
+Mặc định, ứng dụng không ghi đè kết quả đã có. Bật **Ghi đè file đã dịch trước đó** khi bạn muốn dịch lại.
+
+## Ngôn ngữ hỗ trợ
+
+Ứng dụng hỗ trợ 36 ngôn ngữ sử dụng chữ Latin, gồm tiếng Việt, Anh, Pháp, Đức, Tây Ban Nha, Bồ Đào Nha, Ý, Indonesia, Hà Lan, Ba Lan, Thổ Nhĩ Kỳ và nhiều ngôn ngữ châu Âu khác.
+
+Các hệ chữ sau chưa được hỗ trợ: Trung, Nhật, Hàn, Ả Rập, Do Thái, Thái và các chữ Ấn Độ. Ứng dụng sẽ báo lỗi thay vì tạo PDF chứa ký tự ô vuông do thiếu glyph.
 
 ## Dùng như Agent Skill
 
-Repo này đồng thời là một [Agent Skill](https://agentskills.io/), dùng chung được với Codex, Claude Code, GitHub Copilot và các coding agent hỗ trợ chuẩn `SKILL.md`.
+Repo đồng thời tuân theo chuẩn [Agent Skills](https://agentskills.io/) và có thể dùng với Codex, Claude Code, GitHub Copilot cùng các coding agent hỗ trợ `SKILL.md`.
 
-Cài cho tất cả agent mà máy đang có:
+Cài skill cho tất cả agent có trên máy:
 
 ```powershell
 npx skills add breslee1707/VI-Translate -g --all
 ```
 
-Lệnh trên giữ một nguồn skill duy nhất rồi đăng ký nó vào đúng thư mục của từng agent, tránh phải duy trì nhiều bản `SKILL.md`. Nếu chỉ muốn cài cho một agent, thêm `--agent codex`, `--agent claude-code` hoặc tên agent tương ứng thay cho `--all`.
+Sau đó gọi skill bằng yêu cầu tự nhiên:
 
-Skill tự tạo môi trường Python riêng trong thư mục cài đặt. Nếu muốn chuẩn bị thủ công:
+```text
+Use $pdf-translate to translate this PDF into Vietnamese.
+```
+
+Trong Claude Code hoặc Copilot CLI:
+
+```text
+/pdf-translate translate this PDF into Vietnamese.
+```
+
+Skill cung cấp hai chế độ dịch:
+
+| Chế độ | Bộ máy dịch | Phù hợp khi |
+| --- | --- | --- |
+| **Google** | `translate.google.com` | Cần nhanh, miễn phí và không có API key |
+| **Handoff** | AI agent trong phiên làm việc | Tài liệu chuyên ngành cần bản dịch theo ngữ cảnh |
+
+Google là chế độ mặc định và là chế độ được dùng trong app desktop. Handoff trích các đoạn văn sang JSONL để agent dịch, sau đó dựng lại PDF; dữ liệu không được gửi tới Google nhưng sẽ tốn token và mất nhiều thời gian hơn.
+
+Ví dụ với từ *conduction* trong tài liệu truyền nhiệt:
+
+| Google | Handoff |
+| --- | --- |
+| “Sự **dẫn điện** xảy ra khi hai vật tiếp xúc trực tiếp” | “**Dẫn nhiệt** xảy ra khi hai vật thể tiếp xúc trực tiếp với nhau” |
+
+Xem quy trình đầy đủ tại [SKILL.md](SKILL.md).
+
+## Chạy từ mã nguồn
+
+### Chuẩn bị môi trường
 
 ```powershell
+git clone https://github.com/breslee1707/VI-Translate.git
+cd VI-Translate
 python -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-Gọi trong Codex:
-
-> Use $pdf-translate to translate this PDF into Vietnamese.
-
-Trong Claude Code hoặc Copilot CLI:
-
-> /pdf-translate translate this PDF into Vietnamese.
-
-Ở đây có hai chế độ dịch:
-
-| | Dịch bởi | Chi phí |
-| --- | --- | --- |
-| Google | translate.google.com | Miễn phí, không cần API key |
-| Handoff | Agent trong khung chat | Tốn token, chất lượng cao hơn |
-
-Google là chế độ mặc định, và cũng là chế độ duy nhất bản app desktop dùng, vì một file exe không có agent để gọi.
-
-Chế độ handoff trích toàn bộ đoạn văn ra file JSONL, coding agent đang chạy sẽ dịch ngay trong phiên làm việc rồi công cụ dựng lại PDF. Không gửi gì lên Google. Chênh lệch chất lượng thấy rõ ở tài liệu chuyên ngành. Ví dụ với một văn bản về truyền nhiệt, cùng từ *conduction*:
-
-| | Kết quả |
-| --- | --- |
-| Google | "Sự **dẫn điện** xảy ra khi hai vật tiếp xúc trực tiếp" |
-| Handoff | "**Dẫn nhiệt** xảy ra khi hai vật thể tiếp xúc trực tiếp với nhau" |
-
-Đổi lại, handoff tốn token và chậm hơn. Một cuốn sách 300 trang có tới vài nghìn đoạn văn, nên nếu chỉ cần đọc hiểu thì Google là đủ.
-
-Gọi thẳng runner:
+### Dịch bằng Google
 
 ```powershell
-# Google
 .venv\Scripts\python.exe scripts\translate_pdf.py INPUT.pdf --output-dir OUT
+```
 
-# Handoff, bước 1: trích đoạn văn ra cho agent dịch
+### Dịch bằng Handoff
+
+```powershell
+# 1. Trích các đoạn cần dịch
 .venv\Scripts\python.exe scripts\translate_pdf.py INPUT.pdf --engine handoff --emit-segments segments.jsonl
-# bước 2: agent dịch segments.jsonl thành translations.jsonl
-# bước 3: dựng lại PDF
+
+# 2. Dùng agent dịch segments.jsonl thành translations.jsonl
+
+# 3. Dựng lại PDF
 .venv\Scripts\python.exe scripts\translate_pdf.py INPUT.pdf --engine handoff --segments translations.jsonl --output-dir OUT
 ```
 
-Quy trình handoff đầy đủ nằm trong [SKILL.md](SKILL.md).
+### Build ứng dụng Windows
 
-## Giấy phép
+```powershell
+.\build.ps1
+```
 
-AGPL-3.0. Đây là bản rút gọn từ [PDFMathTranslate](https://github.com/Byaidu/PDFMathTranslate) 1.9.11 và [BabelDOC](https://github.com/funstory-ai/BabelDOC). Chi tiết ghi công ở [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Gói phát hành được tạo tại `dist\PDFTranslate-windows.zip`.
 
-Giấy phép này áp dụng cho cả file exe. Nếu bạn phát hành lại app hoặc chạy nó như một dịch vụ qua mạng thì phải kèm theo mã nguồn tương ứng.
+## Giới hạn hiện tại
+
+- **Chưa có OCR:** PDF scan chỉ chứa hình ảnh cần được OCR trước khi dịch.
+- Chữ nằm trong vùng được nhận diện là bảng hoặc hình đôi khi được giữ nguyên theo bản gốc.
+- Mục lục, index, danh mục ký hiệu và tài liệu tham khảo được ưu tiên giữ bố cục nên không được dàn lại dòng. Xem [quy tắc bảo toàn](references/preservation-rules.md).
+- Mỗi đoạn gửi tới Google được giới hạn ở 5.000 ký tự; phần vượt quá giới hạn không được dịch.
+- Với đoạn vốn quá chật, mẫu số của phân số nội dòng có thể vẫn nằm sát dòng bên dưới.
+
+Nên kiểm tra lại tài liệu đầu ra trước khi dùng cho xuất bản hoặc các mục đích yêu cầu độ chính xác cao.
+
+## Giấy phép và ghi công
+
+PDF Translate được phát hành theo giấy phép [AGPL-3.0](LICENSE). Nếu phát hành lại ứng dụng hoặc cung cấp nó như một dịch vụ qua mạng, bạn phải kèm theo mã nguồn tương ứng theo điều khoản của giấy phép.
+
+Dự án được phát triển từ [PDFMathTranslate](https://github.com/Byaidu/PDFMathTranslate) 1.9.11 và [BabelDOC](https://github.com/funstory-ai/BabelDOC). Xem [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) để biết đầy đủ thông tin ghi công.
+
+---
+
+<p align="center">
+  Nếu PDF Translate hữu ích với bạn, hãy tặng repo một ⭐ để nhiều người biết đến dự án hơn.
+</p>
