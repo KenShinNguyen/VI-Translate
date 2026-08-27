@@ -55,6 +55,7 @@ $required = @(
     "PDFTranslate.exe",
     "_internal\base_library.zip",
     "_internal\app\fonts\BeVietnamPro-Regular.ttf",
+    "_internal\app\assets\icon.png",
     "_internal\customtkinter",
     "_internal\tkinterdnd2",
     "_internal\cv2",

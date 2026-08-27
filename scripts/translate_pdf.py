@@ -10,6 +10,7 @@ import re
 import shutil
 import sys
 import tempfile
+import threading
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import NamedTuple
@@ -209,21 +210,40 @@ def _segment_envs(segments: Path | None, emit_segments: Path | None) -> dict[str
 
 
 _LAYOUT_MODEL: dict[str | None, object] = {}
+# The desktop app warms the model on a background thread while the user is still
+# picking files, so two threads really can arrive here at once. On a first run
+# onnxruntime serialises a 71 MB optimised graph next to the model, and two of
+# those writing the same path would race over a file the next run has to trust.
+_LAYOUT_MODEL_LOCK = threading.Lock()
 
 
 def _layout_model(bundled_path: str | None) -> object:
     """Return the layout model, loading it at most once per process.
 
-    Building the inference session takes about half a second, which a batch of
-    files would otherwise pay for every single document.
+    Building the inference session takes about a second and a half, which a
+    batch of files would otherwise pay for every single document.
     """
-    if bundled_path not in _LAYOUT_MODEL:
-        from pdf2zh.doclayout import OnnxModel
+    with _LAYOUT_MODEL_LOCK:
+        if bundled_path not in _LAYOUT_MODEL:
+            from pdf2zh.doclayout import OnnxModel
 
-        _LAYOUT_MODEL[bundled_path] = (
-            OnnxModel(bundled_path) if bundled_path else OnnxModel.load_available()
-        )
-    return _LAYOUT_MODEL[bundled_path]
+            _LAYOUT_MODEL[bundled_path] = (
+                OnnxModel(bundled_path) if bundled_path else OnnxModel.load_available()
+            )
+        return _LAYOUT_MODEL[bundled_path]
+
+
+def preload_layout_model() -> None:
+    """Build the inference session ahead of the first translation.
+
+    Safe to call from any thread and any number of times; it never raises,
+    because a failed warm-up only means the first translation pays the cost
+    it used to pay anyway.
+    """
+    try:
+        _layout_model(os.environ.get("PDF_TRANSLATE_MODEL"))
+    except Exception:  # noqa: BLE001 - a warm-up failure must stay invisible
+        pass
 
 
 def _run_engine(

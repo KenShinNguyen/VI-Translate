@@ -1,0 +1,47 @@
+name: Release
+
+# Tag the release and this publishes it. The in-app update check reads the
+# latest tag from this repository, so the tag and the asset name have to be
+# right every time - which is exactly the kind of thing manual uploads get
+# wrong once and then nobody notices for a month.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check the tag matches APP_VERSION
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}".TrimStart("v")
+          $line = Select-String -Path app/update.py -Pattern '^APP_VERSION = "(.+)"$'
+          $version = $line.Matches[0].Groups[1].Value
+          if ($tag -ne $version) {
+            throw "Tag $tag does not match APP_VERSION $version in app/update.py"
+          }
+          Write-Host "Releasing $version"
+
+      # build.ps1 requires a virtual environment at the repository root and
+      # installs the dependencies into it itself.
+      - name: Create the virtual environment
+        run: python -m venv .venv
+
+      - name: Build
+        run: .\build.ps1
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/PDFTranslate-windows.zip
+          generate_release_notes: true

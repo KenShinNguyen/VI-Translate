@@ -40,6 +40,7 @@ PDF Translate là ứng dụng desktop mã nguồn mở dành cho Windows. Công
 - **Xử lý hàng loạt:** kéo thả nhiều file PDF hoặc cả thư mục vào ứng dụng.
 - **36 ngôn ngữ đích:** mặc định là tiếng Việt, cùng nhiều ngôn ngữ sử dụng chữ Latin.
 - **Không dừng cả hàng đợi:** một file lỗi không làm gián đoạn các file còn lại.
+- **Tự báo bản mới:** khi mở ứng dụng, nếu có phiên bản mới trên GitHub thì góc trên bên phải hiện một dòng bấm được để mở trang tải.
 - **Có chế độ dành cho AI agent:** dùng model trong Codex, Claude Code hoặc Copilot để dịch tài liệu chuyên ngành tốt hơn.
 
 ## Bắt đầu trong 1 phút
@@ -55,6 +56,8 @@ PDF Translate là ứng dụng desktop mã nguồn mở dành cho Windows. Công
 > Windows SmartScreen có thể cảnh báo vì ứng dụng chưa được ký số. Chọn **More info** → **Run anyway** nếu bạn tải file từ trang Releases chính thức của repo này.
 
 Bạn cũng có thể mở [trang Releases](https://github.com/breslee1707/VI-Translate/releases/latest) để xem ghi chú thay đổi và các tệp của phiên bản mới nhất.
+
+Ứng dụng cũng tự kiểm tra phiên bản mới mỗi lần mở. Có bản mới thì góc trên bên phải hiện dòng **● Có bản mới vX.Y.Z**, bấm vào là mở trang tải. Ứng dụng không tự tải và không tự cài đè — bạn vẫn tự giải nén như lần đầu. Máy không có mạng thì bỏ qua, không báo lỗi.
 
 ## Cách sử dụng
 

@@ -71,6 +71,7 @@ exe = EXE(
     [],
     exclude_binaries=True,
     name="PDFTranslate",
+    icon=str(ROOT / "app" / "assets" / "icon.ico"),
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
