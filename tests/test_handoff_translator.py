@@ -74,6 +74,27 @@ class SegmentTableTests(unittest.TestCase):
         # The converter substitutes {vN}; <b0> is ordinary text to it.
         self.assertEqual(placeholders("a <b0></b0> b"), [])
 
+    def test_a_tag_without_a_number_is_not_a_placeholder(self):
+        # "{v }" names no formula, so it must not normalise to a "{v}" token
+        # that then compares equal to another "{v }" somewhere else.
+        for text in ("{v}", "{v }", "{v   }", "{ v }", "{v abc}", "{vx}", "{}"):
+            with self.subTest(text=text):
+                self.assertEqual(placeholders(text), [])
+
+    def test_respacing_a_tag_does_not_read_as_dropping_it(self):
+        for text in ("{v0}", "{ v0 }", "{v 0}", "{ v 0 }", "{v00}"):
+            with self.subTest(text=text):
+                self.assertEqual(placeholders(text), ["{v0}"])
+
+    def test_a_number_is_read_the_way_the_renderer_reads_it(self):
+        # converter.py turns the digits into an int, so 007 and 7 are one formula.
+        self.assertEqual(placeholders("{v007} {v7}"), ["{v7}", "{v7}"])
+
+    def test_a_numberless_tag_no_longer_masks_a_dropped_formula(self):
+        # Before the tag required a number, "{v }" and "{v }" both normalised to
+        # "{v}", so this pair compared equal and the record was accepted.
+        self.assertNotEqual(placeholders("see {v0}"), placeholders("xem {v }"))
+
 
 class HandoffTranslatorTests(unittest.TestCase):
     def setUp(self) -> None:
