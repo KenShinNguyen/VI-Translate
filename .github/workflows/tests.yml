@@ -4,9 +4,17 @@ name: Tests
 # table and the runner's argument handling - all of which are easy to break
 # from a one-line edit, and none of which the release workflow exercises.
 on:
+  # Not every branch: a branch with a pull request open is already covered by
+  # the pull_request trigger, and matching both ran the whole suite twice per
+  # commit.
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
+
+# A second push supersedes the run still going for the first one.
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   tests:
