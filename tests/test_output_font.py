@@ -30,8 +30,14 @@ class BundledSerifTests(unittest.TestCase):
                 self.assertEqual(high_level.download_remote_fonts(language), serif)
 
     def test_the_choice_never_reaches_for_a_windows_path(self):
-        source = Path(high_level.__file__).read_text(encoding="utf-8")
-        self.assertNotIn("C:/Windows", source.replace("It used to be C:/Windows", ""))
+        # Code only: the comment above the lookup names the old path on purpose,
+        # and rewording it must not fail this.
+        code = [
+            line.split("#", 1)[0]
+            for line in Path(high_level.__file__).read_text(encoding="utf-8").splitlines()
+        ]
+        offenders = [line.strip() for line in code if "C:/" in line or "C:\\" in line]
+        self.assertEqual(offenders, [])
 
     def test_a_script_the_serif_does_not_cover_still_uses_noto(self):
         # Cyrillic, Thai and the CJK targets are not what this serif is for, so
