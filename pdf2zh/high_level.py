@@ -26,7 +26,7 @@ from pymupdf import Document, Font
 from pdf2zh.converter import TranslateConverter
 from pdf2zh.doclayout import OnnxModel
 from pdf2zh.pdfinterp import PDFPageInterpreterEx
-from pdf2zh.rules import classify_preserved_page, is_scanned_page
+from pdf2zh.rules import classify_preserved_page, is_scanned_page, preserved_regions
 
 NOTO_NAME = "noto"
 
@@ -166,13 +166,34 @@ def translate_patch(
 
             preservation = classify_preserved_page(doc_zh[page.pageno].get_text("text"))
             if preservation is not None and box.any():
-                logger.info(
-                    "Page %s detected as %s (%s), preserving original layout",
-                    pageno + 1,
-                    preservation.kind,
-                    preservation.detail,
-                )
-                box[:, :] = 0
+                # Which blocks, not the whole page: a chapter that ends with its
+                # reference list used to take the prose above it down as well.
+                regions = preserved_regions(page_blocks, preservation.kind)
+                if regions:
+                    for x0, y0, x1, y1 in regions:
+                        # The mask is indexed the way pdfminer reads it, with y
+                        # up from the bottom; block boxes come in y-down.
+                        mx0 = np.clip(int(x0) - 1, 0, w - 1)
+                        mx1 = np.clip(int(x1) + 1, 0, w - 1)
+                        my0 = np.clip(int(h - y1) - 1, 0, h - 1)
+                        my1 = np.clip(int(h - y0) + 1, 0, h - 1)
+                        box[my0:my1, mx0:mx1] = 0
+                    logger.info(
+                        "Page %s: preserving %d region(s) detected as %s (%s)",
+                        pageno + 1,
+                        len(regions),
+                        preservation.kind,
+                        preservation.detail,
+                    )
+                else:
+                    # Nothing decomposed into blocks, so fall back to the page.
+                    logger.info(
+                        "Page %s detected as %s (%s), preserving original layout",
+                        pageno + 1,
+                        preservation.kind,
+                        preservation.detail,
+                    )
+                    box[:, :] = 0
 
             layout[page.pageno] = box
             if pageno in scanned_pages:
