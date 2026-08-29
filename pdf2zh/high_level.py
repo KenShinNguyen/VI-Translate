@@ -30,6 +30,11 @@ from pdf2zh.rules import classify_preserved_page, is_scanned_page, preserved_reg
 
 NOTO_NAME = "noto"
 
+# Shipped with the app, and present in a source checkout too, so the CLI and the
+# packaged build render the same document the same way.
+BUNDLED_FONT_DIRECTORY = Path(__file__).resolve().parent.parent / "app" / "fonts"
+LATIN_SERIF_NAME = "LiberationSerif-Regular.ttf"
+
 logger = logging.getLogger(__name__)
 
 noto_list = [
@@ -450,12 +455,15 @@ def download_remote_fonts(lang: str):
         },
     }
 
-    # Use Times New Roman for Vietnamese
-    if lang == "vi":
-        times_path = Path("C:/Windows/Fonts/times.ttf")
-        if times_path.exists():
-            logger.info(f"use font: {times_path.as_posix()}")
-            return times_path.as_posix()
+    # A Latin-script target reads as a book in a serif, and this one ships with
+    # the app. It used to be C:/Windows/Fonts/times.ttf, which meant the output
+    # depended on which machine produced it - a serif on Windows, a sans
+    # everywhere else, and nothing at all on a Windows install without Times.
+    if lang not in LANG_NAME_MAP:
+        serif = BUNDLED_FONT_DIRECTORY / LATIN_SERIF_NAME
+        if serif.is_file():
+            logger.info(f"use font: {serif.as_posix()}")
+            return serif.as_posix()
 
     font_name = LANG_NAME_MAP.get(lang, "GoNotoKurrent-Regular.ttf")
 
