@@ -266,8 +266,16 @@ BLOCK_ENTRY_TESTS = {
 def block_is_preserved(block_text: str, is_entry) -> bool:
     """Return whether one block is a list of entries rather than prose.
 
-    Judged by density, not by a count: a block is entries when most of its lines
-    are entries. A paragraph that cites four sources is still a paragraph.
+    Judged by how much of the block the entries account for, not by how many
+    lines open one. A bibliography is set with a hanging indent, so most of its
+    lines are the continuation of the entry above and open nothing themselves:
+
+        Bakhtin, M. M. (1981) The Dialogic Imagination: Four Essays.
+            Edited by Michael Holquist. Austin: University of Texas Press.
+
+    Counting only the openers put a real reference list at 0.44 and reflowed it.
+    A line is counted once an entry above it has claimed it, so that list scores
+    1.0 while a paragraph, which opens no entry at all, still scores 0.
     """
     lines = [line.strip() for line in block_text.splitlines() if line.strip()]
     if not lines:
@@ -276,7 +284,14 @@ def block_is_preserved(block_text: str, is_entry) -> bool:
     if not body:
         # A lone "References" or "Index" heading belongs with the list under it.
         return True
-    return sum(1 for line in body if is_entry(line)) / len(body) > 0.6
+    covered = 0
+    within_entry = False
+    for line in body:
+        if is_entry(line):
+            within_entry = True
+        if within_entry:
+            covered += 1
+    return covered / len(body) > 0.6
 
 
 def preserved_regions(

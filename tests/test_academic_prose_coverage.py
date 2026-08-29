@@ -150,6 +150,30 @@ class RegionTests(unittest.TestCase):
         # block, so it says nothing and the caller preserves the page as before.
         self.assertEqual(preserved_regions([_block(INDEX_LINES)], "NOMENCLATURE"), [])
 
+    def test_a_bibliography_set_with_a_hanging_indent_is_preserved(self):
+        # Most lines of a real reference list are the continuation of the entry
+        # above and open nothing themselves. Counting only the openers scored
+        # this block 0.44 and reflowed a bibliography that had been intact.
+        wrapped = (
+            "Bakhtin, M. M. (1981) The Dialogic Imagination: Four Essays.\n"
+            "    Edited by Michael Holquist. Austin: University of Texas Press.\n"
+            "Bazerman, C. (1988) Shaping Written Knowledge: The Genre and\n"
+            "    Activity of the Experimental Article in Science. Madison:\n"
+            "    University of Wisconsin Press.\n"
+            "Halliday, M. A. K. (1978) Language as Social Semiotic: The Social\n"
+            "    Interpretation of Language and Meaning. London: Edward Arnold.\n"
+            "Miller, C. R. (1984) Genre as social action. Quarterly Journal of\n"
+            "    Speech 70, pp. 151-167."
+        )
+        self.assertTrue(block_is_preserved(wrapped, is_reference_entry))
+
+    def test_wrapping_does_not_make_a_paragraph_look_like_a_list(self):
+        # The same leniency must not let prose through: prose opens no entry, so
+        # nothing above a line ever claims it.
+        self.assertFalse(
+            block_is_preserved("\n".join(CITING_PROSE_LINES), is_reference_entry)
+        )
+
     def test_a_lone_heading_block_travels_with_its_list(self):
         self.assertTrue(block_is_preserved("References", is_reference_entry))
 
