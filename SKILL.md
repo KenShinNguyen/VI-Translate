@@ -91,13 +91,23 @@ An output directory is not required during extraction because the pass-one PDF i
 
 ### 2. Translate
 
+`segments.jsonl` holds one record per segment:
+
+```json
+{"id":"seg-00000001","page":12,"src":"exact source text"}
+```
+
+`page` is the one-based page the segment came from; open it when a term is ambiguous. `id` is a label for your own batching and progress notes.
+
 Read `segments.jsonl` in manageable batches. Write one JSON object per line to `translations.jsonl`:
 
 ```json
 {"src":"exact source text","dst":"translated text"}
 ```
 
-Copy each `src` value exactly. Preserve URLs, paths, identifiers, citation markers, and numbers.
+Copy each `src` value exactly. Preserve URLs, paths, identifiers, citation markers, and numbers. Carrying `id` and `page` through to the translated file is harmless but not required.
+
+**`src` is what the rebuild matches on, not `id`.** A segment that appears on several pages is reported once and translated once, so a term reads the same way throughout the document. Two occurrences cannot be given different translations; if one genuinely needs different wording, say so in your report rather than editing one of them.
 
 Formula and code placeholders look like `{v0}`, `{v1}` and stand in for a formula, an inline equation, or a code run lifted out of the text. They are immutable: every tag must reappear in `dst` with the same number, count, and relative order as in `src`. Reword the sentence around them freely, but never renumber, drop, duplicate, or reorder them. The loader rejects a record whose placeholders differ and leaves that segment untranslated.
 
