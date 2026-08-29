@@ -8,6 +8,7 @@ import logging
 import re
 import threading
 import unicodedata
+from concurrent.futures import Future
 from typing import Any, ClassVar
 
 import requests
@@ -17,9 +18,10 @@ from pdf2zh.cache import TranslationCache
 logger = logging.getLogger(__name__)
 
 # What the converter actually substitutes for a formula or code run: see the
-# "{{v{len(var)}}}" writes in converter.py. The renderer that puts the formulas
-# back tolerates stray whitespace inside a tag, so this has to match it.
-PLACEHOLDER_PATTERN = re.compile(r"\{\s*v[\d\s]+\}")
+# "{{v{len(var)}}}" writes in converter.py. Whitespace is tolerated around the
+# number because the renderer tolerates it, but the number itself is required:
+# matching [\d\s]+ instead accepted "{v }", which names no formula at all.
+PLACEHOLDER_PATTERN = re.compile(r"\{\s*v\s*(\d+)\s*\}")
 
 
 def remove_control_characters(value: str) -> str:
@@ -46,6 +48,11 @@ class BaseTranslator:
         self.lang_out = self.lang_map.get(lang_out.lower(), lang_out)
         self.model = model
         self.ignore_cache = ignore_cache
+        # One entry per call currently out to the engine, so the workers that
+        # want the same text can wait on it instead of asking again. Popped on
+        # completion, so this holds at most one entry per worker thread.
+        self._inflight: dict[str, Future] = {}
+        self._inflight_lock = threading.Lock()
         self.cache = TranslationCache(
             self.name,
             {
@@ -56,13 +63,44 @@ class BaseTranslator:
         )
 
     def translate(self, text: str, ignore_cache: bool = False) -> str:
-        """Translate text, consulting the persistent cache unless bypassed."""
-        if not (self.ignore_cache or ignore_cache):
+        """Translate text once, however many workers ask for it at the same time.
+
+        The cache only helps once an answer is back. Until then the workers on
+        a page that repeat a string - a table label, a running head - would each
+        open their own request for it, so the first caller does the work and the
+        rest wait on its result.
+        """
+        use_cache = not (self.ignore_cache or ignore_cache)
+        if use_cache:
             cached = self.cache.get(text)
             if cached is not None:
                 return cached
-        translated = self.do_translate(text)
-        if not (self.ignore_cache or ignore_cache):
+
+        with self._inflight_lock:
+            pending = self._inflight.get(text)
+            leading = pending is None
+            if leading:
+                pending = self._inflight[text] = Future()
+
+        if not leading:
+            # Re-raises whatever the leading call raised, so a waiter fails the
+            # same way it would have alone and the caller's retry still applies.
+            return pending.result()
+
+        try:
+            translated = self.do_translate(text)
+        except BaseException as error:
+            pending.set_exception(error)
+            raise
+        else:
+            # Settled before the entry goes, so a caller arriving in between
+            # finds a finished future rather than starting a second request.
+            pending.set_result(translated)
+        finally:
+            with self._inflight_lock:
+                self._inflight.pop(text, None)
+
+        if use_cache:
             self.cache.set(text, translated)
         return translated
 
@@ -204,14 +242,12 @@ class GoogleTranslator(BaseTranslator):
 def placeholders(text: str) -> list[str]:
     """Return the formula placeholders in order, normalised: ['{v0}', '{v1}'].
 
-    Normalising mirrors the renderer, which strips spaces out of a tag before
-    reading its number. Without that, a translator that returned "{ v0 }" for
-    "{v0}" would be read as having dropped the formula.
+    Normalising mirrors the renderer, which reads the number out of a tag with
+    int() and so treats "{ v0 }", "{v 0}" and "{v00}" as the same formula.
+    Without it, a translator that merely respaced a tag would be read as having
+    dropped the formula it stands for.
     """
-    return [
-        "{v" + "".join(character for character in match if character.isdigit()) + "}"
-        for match in PLACEHOLDER_PATTERN.findall(text)
-    ]
+    return [f"{{v{int(number)}}}" for number in PLACEHOLDER_PATTERN.findall(text)]
 
 
 def load_segment_table(path: str | None) -> dict[str, str]:
