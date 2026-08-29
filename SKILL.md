@@ -99,7 +99,7 @@ Read `segments.jsonl` in manageable batches. Write one JSON object per line to `
 
 Copy each `src` value exactly. Preserve URLs, paths, identifiers, citation markers, and numbers.
 
-Formula and code placeholders such as `<b0></b0>` are immutable. Every opening and closing tag must retain the same identifier, count, and order as the source. The loader rejects a record whose placeholders differ, leaving that segment untranslated.
+Formula and code placeholders look like `{v0}`, `{v1}` and stand in for a formula, an inline equation, or a code run lifted out of the text. They are immutable: every tag must reappear in `dst` with the same number, count, and relative order as in `src`. Reword the sentence around them freely, but never renumber, drop, duplicate, or reorder them. The loader rejects a record whose placeholders differ and leaves that segment untranslated.
 
 ### 3. Rebuild
 
