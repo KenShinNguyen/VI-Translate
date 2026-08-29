@@ -53,6 +53,9 @@ class BaseTranslator:
         # completion, so this holds at most one entry per worker thread.
         self._inflight: dict[str, Future] = {}
         self._inflight_lock = threading.Lock()
+        # Set by the converter before each page's worker pool, so a translator
+        # that reports segments can say where one came from.
+        self.current_page: int | None = None
         self.cache = TranslationCache(
             self.name,
             {
@@ -314,6 +317,7 @@ class HandoffTranslator(BaseTranslator):
         self.table = load_segment_table(envs.get("segments_in"))
         self.misses_path = envs.get("segments_out")
         self._seen: set[str] = set()
+        self._emitted = 0
         self._lock = threading.Lock()
         if self.misses_path:
             open(self.misses_path, "w", encoding="utf-8").close()
@@ -326,15 +330,27 @@ class HandoffTranslator(BaseTranslator):
         return text
 
     def _record_miss(self, text: str) -> None:
-        """Append one untranslated segment, deduplicated, for the caller to fill in."""
+        """Append one untranslated segment, deduplicated, for the caller to fill in.
+
+        `src` is the only field the loader reads back; `id` and `page` are there
+        to give whoever translates the file somewhere to look the segment up.
+        Deliberately not an identity: two occurrences of the same text are one
+        record, which is what keeps a term translated the same way throughout a
+        book.
+        """
         if not self.misses_path:
             return
         with self._lock:
             if text in self._seen:
                 return
             self._seen.add(text)
+            self._emitted += 1
+            record: dict[str, Any] = {"id": f"seg-{self._emitted:08d}"}
+            if self.current_page is not None:
+                record["page"] = self.current_page
+            record["src"] = text
             with open(self.misses_path, "a", encoding="utf-8") as stream:
-                stream.write(json.dumps({"src": text}, ensure_ascii=False) + "\n")
+                stream.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
 ENGINES: dict[str, type[BaseTranslator]] = {

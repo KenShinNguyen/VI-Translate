@@ -332,6 +332,10 @@ class TranslateConverter(PDFConverterEx):
                     log.exception(e, exc_info=False)
                 self.translation_failures.append(s)
                 return s
+        # This pool is built per page, so one attribute carries which page the
+        # segments came from - no per-call plumbing, and no race, because the
+        # pool is joined before the next page starts.
+        self.translator.current_page = ltpage.pageid + 1
         with concurrent.futures.ThreadPoolExecutor(
             max_workers=self.thread
         ) as executor:

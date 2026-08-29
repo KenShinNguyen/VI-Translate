@@ -70,6 +70,21 @@ class SegmentTableTests(unittest.TestCase):
             ["{v0}", "{v10}", "{v2}"],
         )
 
+    def test_context_fields_ride_along_without_becoming_the_key(self):
+        # A translated file keeps whatever id/page the extract pass emitted; the
+        # loader must still match on src, or every rebuild would depend on ids
+        # lining up between two separate runs of the layout pass.
+        path = _jsonl(
+            self.root / "table.jsonl",
+            [
+                {"id": "seg-00000001", "page": 12, "src": "Heat", "dst": "Nhiệt"},
+                {"src": "Flow", "dst": "Dòng chảy"},
+            ],
+        )
+        self.assertEqual(
+            load_segment_table(str(path)), {"Heat": "Nhiệt", "Flow": "Dòng chảy"}
+        )
+
     def test_placeholders_ignores_the_scheme_the_pipeline_never_emits(self):
         # The converter substitutes {vN}; <b0> is ordinary text to it.
         self.assertEqual(placeholders("a <b0></b0> b"), [])
@@ -113,9 +128,12 @@ class HandoffTranslatorTests(unittest.TestCase):
             envs["segments_in"] = str(_jsonl(self.root / "table.jsonl", table))
         return HandoffTranslator("auto", "vi", envs=envs)
 
-    def _recorded_misses(self) -> list[str]:
+    def _recorded(self) -> list[dict]:
         lines = self.misses.read_text(encoding="utf-8").splitlines()
-        return [json.loads(line)["src"] for line in lines if line.strip()]
+        return [json.loads(line) for line in lines if line.strip()]
+
+    def _recorded_misses(self) -> list[str]:
+        return [record["src"] for record in self._recorded()]
 
     def test_returns_the_supplied_translation(self):
         translator = self._translator([{"src": "Hello", "dst": "Xin chào"}])
@@ -134,6 +152,39 @@ class HandoffTranslatorTests(unittest.TestCase):
         translator.translate("Hello")
         self.assertTrue(translator.ignore_cache)
         self.assertIsNone(translator.cache.get("Hello"))
+
+    def test_a_recorded_miss_carries_an_id_and_the_page_it_came_from(self):
+        translator = self._translator()
+        translator.current_page = 12
+        translator.translate("Dẫn nhiệt")
+        translator.current_page = 80
+        translator.translate("Đối lưu")
+        records = self._recorded()
+        self.assertEqual(
+            records,
+            [
+                {"id": "seg-00000001", "page": 12, "src": "Dẫn nhiệt"},
+                {"id": "seg-00000002", "page": 80, "src": "Đối lưu"},
+            ],
+        )
+
+    def test_the_page_is_omitted_rather_than_guessed_when_unknown(self):
+        # Nothing sets current_page outside the converter's page loop.
+        translator = self._translator()
+        self.assertIsNone(translator.current_page)
+        translator.translate("Hello")
+        self.assertEqual(self._recorded(), [{"id": "seg-00000001", "src": "Hello"}])
+
+    def test_repeated_text_stays_one_record_so_a_term_reads_the_same_throughout(self):
+        translator = self._translator()
+        translator.current_page = 10
+        translator.translate("Table 1 shows...")
+        translator.current_page = 80
+        translator.translate("Table 1 shows...")
+        self.assertEqual(
+            self._recorded(),
+            [{"id": "seg-00000001", "page": 10, "src": "Table 1 shows..."}],
+        )
 
     def test_truncates_a_stale_miss_file_on_construction(self):
         self.misses.write_text('{"src": "from an older run"}\n', encoding="utf-8")
