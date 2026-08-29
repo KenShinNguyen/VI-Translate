@@ -39,13 +39,24 @@ class SegmentTableTests(unittest.TestCase):
         path = _jsonl(
             self.root / "table.jsonl",
             [
-                {"src": "where <b0></b0> holds", "dst": "trong đó đúng"},
-                {"src": "and <b1></b1> too", "dst": "và <b1></b1> nữa"},
+                {"src": "where {v0} holds", "dst": "trong đó đúng"},
+                {"src": "and {v1} too", "dst": "và {v1} nữa"},
+                {"src": "{v2} before {v3}", "dst": "{v3} sau {v2}"},
             ],
         )
         table = load_segment_table(str(path))
-        self.assertNotIn("where <b0></b0> holds", table)
-        self.assertIn("and <b1></b1> too", table)
+        self.assertNotIn("where {v0} holds", table)
+        self.assertIn("and {v1} too", table)
+        self.assertNotIn("{v2} before {v3}", table)
+
+    def test_accepts_a_placeholder_the_renderer_would_still_read(self):
+        # The renderer strips spaces out of a tag before reading its number, so
+        # a translator that spaced one out has not dropped the formula.
+        path = _jsonl(
+            self.root / "table.jsonl",
+            [{"src": "where {v0} holds", "dst": "trong đó { v 0 } đúng"}],
+        )
+        self.assertIn("where {v0} holds", load_segment_table(str(path)))
 
     def test_rejects_a_malformed_record_and_names_the_line(self):
         path = self.root / "table.jsonl"
@@ -55,9 +66,13 @@ class SegmentTableTests(unittest.TestCase):
 
     def test_placeholders_are_returned_in_order(self):
         self.assertEqual(
-            placeholders("a <b0></b0> b <b1></b1>"),
-            ["<b0>", "</b0>", "<b1>", "</b1>"],
+            placeholders("a {v0} b {v10} c { v 2 }"),
+            ["{v0}", "{v10}", "{v2}"],
         )
+
+    def test_placeholders_ignores_the_scheme_the_pipeline_never_emits(self):
+        # The converter substitutes {vN}; <b0> is ordinary text to it.
+        self.assertEqual(placeholders("a <b0></b0> b"), [])
 
 
 class HandoffTranslatorTests(unittest.TestCase):

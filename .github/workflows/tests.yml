@@ -1,0 +1,44 @@
+name: Tests
+
+# The suite covers the preservation rules, the segment splitter, the handoff
+# table and the runner's argument handling - all of which are easy to break
+# from a one-line edit, and none of which the release workflow exercises.
+on:
+  # Not every branch: a branch with a pull request open is already covered by
+  # the pull_request trigger, and matching both ran the whole suite twice per
+  # commit.
+  push:
+    branches: [main]
+  pull_request:
+
+# A second push supersedes the run still going for the first one.
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install
+        run: python -m pip install -r requirements-dev.txt
+
+      # The desktop app's own dependencies are Windows-shaped and its tests skip
+      # themselves without them, so this job covers the engine and the runner.
+      - name: Run the tests
+        run: python -m pytest -q

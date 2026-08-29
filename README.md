@@ -175,7 +175,7 @@ Gói phát hành được tạo tại `dist\PDFTranslate-windows.zip`.
 - **Chưa có OCR:** PDF scan chỉ chứa hình ảnh cần được OCR trước khi dịch.
 - Chữ nằm trong vùng được nhận diện là bảng hoặc hình đôi khi được giữ nguyên theo bản gốc.
 - Mục lục, index, danh mục ký hiệu và tài liệu tham khảo được ưu tiên giữ bố cục nên không được dàn lại dòng. Xem [quy tắc bảo toàn](references/preservation-rules.md).
-- Mỗi đoạn gửi tới Google được giới hạn ở 5.000 ký tự; phần vượt quá giới hạn không được dịch.
+- Đoạn văn dài hơn 5.000 ký tự được cắt theo ranh giới câu rồi gửi thành nhiều lượt, nên chất lượng ở chỗ cắt có thể kém hơn đôi chút.
 - Với đoạn vốn quá chật, mẫu số của phân số nội dòng có thể vẫn nằm sát dòng bên dưới.
 
 Nên kiểm tra lại tài liệu đầu ra trước khi dùng cho xuất bản hoặc các mục đích yêu cầu độ chính xác cao.
