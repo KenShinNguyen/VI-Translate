@@ -26,9 +26,14 @@ from pymupdf import Document, Font
 from pdf2zh.converter import TranslateConverter
 from pdf2zh.doclayout import OnnxModel
 from pdf2zh.pdfinterp import PDFPageInterpreterEx
-from pdf2zh.rules import classify_preserved_page, is_scanned_page
+from pdf2zh.rules import classify_preserved_page, is_scanned_page, preserved_regions
 
 NOTO_NAME = "noto"
+
+# Shipped with the app, and present in a source checkout too, so the CLI and the
+# packaged build render the same document the same way.
+BUNDLED_FONT_DIRECTORY = Path(__file__).resolve().parent.parent / "app" / "fonts"
+LATIN_SERIF_NAME = "LiberationSerif-Regular.ttf"
 
 logger = logging.getLogger(__name__)
 
@@ -166,13 +171,34 @@ def translate_patch(
 
             preservation = classify_preserved_page(doc_zh[page.pageno].get_text("text"))
             if preservation is not None and box.any():
-                logger.info(
-                    "Page %s detected as %s (%s), preserving original layout",
-                    pageno + 1,
-                    preservation.kind,
-                    preservation.detail,
-                )
-                box[:, :] = 0
+                # Which blocks, not the whole page: a chapter that ends with its
+                # reference list used to take the prose above it down as well.
+                regions = preserved_regions(page_blocks, preservation.kind)
+                if regions:
+                    for x0, y0, x1, y1 in regions:
+                        # The mask is indexed the way pdfminer reads it, with y
+                        # up from the bottom; block boxes come in y-down.
+                        mx0 = np.clip(int(x0) - 1, 0, w - 1)
+                        mx1 = np.clip(int(x1) + 1, 0, w - 1)
+                        my0 = np.clip(int(h - y1) - 1, 0, h - 1)
+                        my1 = np.clip(int(h - y0) + 1, 0, h - 1)
+                        box[my0:my1, mx0:mx1] = 0
+                    logger.info(
+                        "Page %s: preserving %d region(s) detected as %s (%s)",
+                        pageno + 1,
+                        len(regions),
+                        preservation.kind,
+                        preservation.detail,
+                    )
+                else:
+                    # Nothing decomposed into blocks, so fall back to the page.
+                    logger.info(
+                        "Page %s detected as %s (%s), preserving original layout",
+                        pageno + 1,
+                        preservation.kind,
+                        preservation.detail,
+                    )
+                    box[:, :] = 0
 
             layout[page.pageno] = box
             if pageno in scanned_pages:
@@ -429,12 +455,15 @@ def download_remote_fonts(lang: str):
         },
     }
 
-    # Use Times New Roman for Vietnamese
-    if lang == "vi":
-        times_path = Path("C:/Windows/Fonts/times.ttf")
-        if times_path.exists():
-            logger.info(f"use font: {times_path.as_posix()}")
-            return times_path.as_posix()
+    # A Latin-script target reads as a book in a serif, and this one ships with
+    # the app. It used to be C:/Windows/Fonts/times.ttf, which meant the output
+    # depended on which machine produced it - a serif on Windows, a sans
+    # everywhere else, and nothing at all on a Windows install without Times.
+    if lang not in LANG_NAME_MAP:
+        serif = BUNDLED_FONT_DIRECTORY / LATIN_SERIF_NAME
+        if serif.is_file():
+            logger.info(f"use font: {serif.as_posix()}")
+            return serif.as_posix()
 
     font_name = LANG_NAME_MAP.get(lang, "GoNotoKurrent-Regular.ttf")
 
