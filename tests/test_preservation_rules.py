@@ -4,6 +4,7 @@ import unittest
 
 from pdfminer.pdfinterp import PDFResourceManager
 
+from pdf2zh.cache import clean_test_db, init_test_db
 from pdf2zh.converter import TranslateConverter
 from pdf2zh.rules import (
     BULLET_CHARACTERS,
@@ -15,6 +16,15 @@ from pdf2zh.rules import (
 
 
 class PreservationRuleTests(unittest.TestCase):
+    def setUp(self) -> None:
+        # test_converter_accepts_every_registered_engine below constructs
+        # real translators, each opening a TranslationCache - keep that off
+        # the user's actual ~/.cache/pdf2zh database.
+        self.test_db = init_test_db()
+
+    def tearDown(self) -> None:
+        clean_test_db(self.test_db)
+
     def test_formula_rule_covers_math_and_monospace_code_fonts(self):
         for font in (
             "CMMI10",

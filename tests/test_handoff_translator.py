@@ -123,16 +123,21 @@ class HandoffTranslatorTests(unittest.TestCase):
         clean_test_db(self.test_db)
 
     def _translator(
-        self, table: list[dict] | None = None, glossary: dict | None = None
+        self,
+        table: list[dict] | None = None,
+        glossary: dict | None = None,
+        *,
+        ignore_cache: bool = False,
+        misses: Path | None = None,
     ) -> HandoffTranslator:
-        envs = {"segments_out": str(self.misses)}
+        envs = {"segments_out": str(misses if misses is not None else self.misses)}
         if table is not None:
             envs["segments_in"] = str(_jsonl(self.root / "table.jsonl", table))
         if glossary is not None:
             glossary_path = self.root / "glossary.json"
             glossary_path.write_text(json.dumps(glossary, ensure_ascii=False), encoding="utf-8")
             envs["glossary"] = str(glossary_path)
-        return HandoffTranslator("auto", "vi", envs=envs)
+        return HandoffTranslator("auto", "vi", envs=envs, ignore_cache=ignore_cache)
 
     def _recorded(self) -> list[dict]:
         lines = self.misses.read_text(encoding="utf-8").splitlines()
@@ -196,6 +201,50 @@ class HandoffTranslatorTests(unittest.TestCase):
         self.misses.write_text('{"src": "from an older run"}\n', encoding="utf-8")
         self._translator()
         self.assertEqual(self._recorded_misses(), [])
+
+    def test_a_supplied_translation_is_remembered_for_the_next_run(self):
+        # Chapter 1: the agent supplies a translation through the table.
+        chapter_1 = self._translator(
+            [{"src": "Strategic warning is...", "dst": "Cảnh báo chiến lược là..."}],
+            misses=self.root / "missing-1.jsonl",
+        )
+        chapter_1.translate("Strategic warning is...")
+
+        # Chapter 2: a fresh translator, same lang pair, no table entry for
+        # this sentence - it resolves from the translation memory instead of
+        # being reported as a miss for the agent to translate again.
+        chapter_2 = self._translator(misses=self.root / "missing-2.jsonl")
+        self.assertEqual(
+            chapter_2.translate("Strategic warning is..."), "Cảnh báo chiến lược là..."
+        )
+        self.assertEqual(self._recorded_misses_at(self.root / "missing-2.jsonl"), [])
+
+    def test_ignore_cache_disables_reuse_across_runs(self):
+        chapter_1 = self._translator(
+            [{"src": "Strategic warning is...", "dst": "Cảnh báo chiến lược là..."}],
+            misses=self.root / "missing-1.jsonl",
+        )
+        chapter_1.translate("Strategic warning is...")
+
+        chapter_2 = self._translator(
+            misses=self.root / "missing-2.jsonl", ignore_cache=True
+        )
+        self.assertEqual(chapter_2.translate("Strategic warning is..."), "Strategic warning is...")
+        self.assertEqual(
+            self._recorded_misses_at(self.root / "missing-2.jsonl"),
+            ["Strategic warning is..."],
+        )
+
+    def test_ignore_cache_also_stops_writing_new_entries(self):
+        translator = self._translator(
+            [{"src": "Hello", "dst": "Xin chào"}], ignore_cache=True
+        )
+        translator.translate("Hello")
+        self.assertIsNone(translator.cache.get("Hello"))
+
+    def _recorded_misses_at(self, path: Path) -> list[str]:
+        lines = path.read_text(encoding="utf-8").splitlines()
+        return [json.loads(line)["src"] for line in lines if line.strip()]
 
     def test_a_matched_glossary_term_rides_along_as_terms(self):
         translator = self._translator(

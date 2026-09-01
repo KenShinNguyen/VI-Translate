@@ -190,6 +190,8 @@ Google mode bỏ qua glossary vì endpoint không nhận chỉ dẫn. Xem chi ti
 .venv\Scripts\python.exe scripts\translate_pdf.py INPUT.pdf --engine handoff --segments translations.jsonl --output-dir OUT
 ```
 
+Nếu dịch nhiều chương của cùng một cuốn sách: mỗi câu đã dịch ở chương trước sẽ tự động được ghi nhớ (translation memory, `~/.cache/pdf2zh/cache.v2.db`) và tái dùng ở chương sau — không cần agent dịch lại, không hiện ra trong `segments.jsonl` nữa. Dùng `--ignore-cache` nếu muốn dịch lại từ đầu, hoặc `--domain <tên>` để gắn nhãn chủ đề cho các bản dịch của lần chạy này (hiện chỉ để ghi chú, chưa dùng để lọc).
+
 ### Build ứng dụng Windows
 
 ```powershell
