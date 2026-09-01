@@ -116,14 +116,15 @@ Trong Claude Code hoặc Copilot CLI:
 /pdf-translate translate this PDF into Vietnamese.
 ```
 
-Skill cung cấp hai chế độ dịch:
+Skill cung cấp ba chế độ dịch:
 
 | Chế độ | Bộ máy dịch | Phù hợp khi |
 | --- | --- | --- |
 | **Google** | `translate.google.com` | Cần nhanh, miễn phí và không có API key |
-| **Handoff** | AI agent trong phiên làm việc | Tài liệu chuyên ngành cần bản dịch theo ngữ cảnh |
+| **Anthropic** | Claude API (`ANTHROPIC_API_KEY`) | Cần chất lượng tốt hơn Google mà không cần agent túc trực dịch tay |
+| **Handoff** | AI agent trong phiên làm việc | Tài liệu chuyên ngành cần bản dịch theo ngữ cảnh, không muốn gọi API riêng |
 
-Google là chế độ mặc định và là chế độ được dùng trong app desktop. Handoff trích các đoạn văn sang JSONL để agent dịch, sau đó dựng lại PDF; dữ liệu không được gửi tới Google nhưng sẽ tốn token và mất nhiều thời gian hơn.
+Google là chế độ mặc định và là chế độ được dùng trong app desktop. Anthropic gọi thẳng Claude API cho từng đoạn văn — chạy từ mã nguồn với `--engine anthropic` và biến môi trường `ANTHROPIC_API_KEY`, tùy chọn chỉ định model qua `--model`. Handoff trích các đoạn văn sang JSONL để agent dịch, sau đó dựng lại PDF; dữ liệu không được gửi tới Google/Anthropic nhưng sẽ tốn token và mất nhiều thời gian hơn.
 
 Ví dụ với từ *conduction* trong tài liệu truyền nhiệt:
 
@@ -148,6 +149,14 @@ python -m venv .venv
 
 ```powershell
 .venv\Scripts\python.exe scripts\translate_pdf.py INPUT.pdf --output-dir OUT
+```
+
+### Dịch bằng Anthropic (Claude API)
+
+```powershell
+$env:ANTHROPIC_API_KEY = "sk-ant-..."
+.venv\Scripts\python.exe scripts\translate_pdf.py INPUT.pdf --engine anthropic --output-dir OUT
+# tùy chọn: --model claude-sonnet-5
 ```
 
 ### Dịch bằng Handoff

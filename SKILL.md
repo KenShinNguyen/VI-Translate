@@ -22,14 +22,16 @@ Use the interpreter inside `<skill-root>/.venv`:
 | Mode | Translator | Use when |
 | --- | --- | --- |
 | Google (default) | `translate.google.com` | Books, batches, first drafts, or low token use |
-| Handoff | The active agent | Terminology, context, or translation quality matters |
+| Anthropic | Claude API (`ANTHROPIC_API_KEY`) | Better quality than Google without occupying the active agent, and an API key is available |
+| Handoff | The active agent | Terminology, context, or translation quality matters and no separate API key is available |
 
-Default to Google. Offer handoff when the user asks for higher quality, rejects the Google result, or provides a short technical document.
+Default to Google. Offer Anthropic when an `ANTHROPIC_API_KEY` is available and quality matters but the document is too large to hand off to the active agent's own context. Offer handoff when the user asks for higher quality, rejects the Google result, or provides a short technical document.
 
 ## Boundaries
 
 - Use the bundled `pdf2zh/` core. Never substitute the PyPI `pdf2zh` package; the runner checks version `1.9.11` and preservation ruleset `code4life-preservation-v1` and refuses an external core.
-- Google mode sends extracted document text to Google. Tell the user before processing sensitive material and obtain explicit confirmation unless their request already authorizes that disclosure. Handoff mode does not contact Google.
+- Google and Anthropic mode send extracted document text to that provider. Tell the user before processing sensitive material and obtain explicit confirmation unless their request already authorizes that disclosure. Handoff mode does not contact either.
+- Anthropic mode needs `ANTHROPIC_API_KEY` in the environment; the runner refuses to start without it rather than running partway and leaving segments untranslated. Pass a model with `--model` (default: a fast, low-cost Claude model) when the user wants a specific one.
 - Supported targets are the Latin-script codes enforced by `scripts/translate_pdf.py`. CJK, right-to-left, Thai, Devanagari, and other complex-shaping targets are rejected because the bundled font and layout engine cannot render them reliably.
 - There is no OCR. If a source page is image-only, report that OCR is required instead of claiming it was translated.
 - Text inside detected tables, figures, contents pages, indexes, symbol lists, or references may intentionally remain in the source language. Report material untranslated regions as partial translation.
@@ -76,6 +78,22 @@ macOS/Linux:
 ```
 
 For a batch, process files individually and report progress. A failure on one file must not stop the remaining files; collect and report all failures at the end.
+
+## Anthropic mode
+
+Requires `ANTHROPIC_API_KEY` in the environment. Same one-command-per-file shape as Google mode, plus `--engine anthropic` and an optional `--model`.
+
+Windows:
+
+```powershell
+& "<skill-root>\.venv\Scripts\python.exe" "<skill-root>\scripts\translate_pdf.py" "<input.pdf>" --engine anthropic --output-dir "<output-dir>"
+```
+
+macOS/Linux:
+
+```bash
+"<skill-root>/.venv/bin/python" "<skill-root>/scripts/translate_pdf.py" "<input.pdf>" --engine anthropic --output-dir "<output-dir>"
+```
 
 ## Handoff mode
 

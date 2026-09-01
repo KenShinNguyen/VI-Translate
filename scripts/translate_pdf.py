@@ -35,7 +35,7 @@ TARGET_LANGUAGES = frozenset(
     }
 )
 
-ENGINES = ("google", "handoff")
+ENGINES = ("google", "handoff", "anthropic")
 
 # Measured on an eight-page sample: 2 threads 48s, 4 threads 30s, 8 threads 27s,
 # 12 threads 29s. Past four, the layout pass rather than the network is the floor,
@@ -105,6 +105,14 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--threads", default=DEFAULT_THREADS, type=_positive_threads)
     parser.add_argument("--engine", default="google", choices=ENGINES)
     parser.add_argument(
+        "--model",
+        help=(
+            "translation model id for engines that take one, e.g. "
+            "--engine anthropic --model claude-sonnet-5. Ignored by engines "
+            "that don't use it."
+        ),
+    )
+    parser.add_argument(
         "--segments",
         type=Path,
         help='handoff engine: JSONL of {"src","dst"} records to translate from',
@@ -127,6 +135,12 @@ def _validate_arguments(args: argparse.Namespace) -> None:
             raise TranslationError("--engine handoff needs --segments, --emit-segments, or both")
     elif args.segments is not None or args.emit_segments is not None:
         raise TranslationError("--segments and --emit-segments require --engine handoff")
+    if args.engine == "anthropic" and not os.environ.get("ANTHROPIC_API_KEY"):
+        # Fail before the layout pass builds the ONNX model and parses the PDF,
+        # rather than partway through the first page's translation calls.
+        raise TranslationError(
+            "--engine anthropic needs the ANTHROPIC_API_KEY environment variable"
+        )
 
 
 def _require_core() -> None:
@@ -257,12 +271,13 @@ def _run_engine(
     engine: str,
     envs: dict[str, str],
     on_progress: Callable[[int, int], None] | None = None,
+    model: str | None = None,
 ) -> int:
     """Run the core and return how many segments were left untranslated."""
     from pdf2zh.high_level import translate
 
     # A packaged build ships the layout model so the first run needs no network.
-    model = _layout_model(os.environ.get("PDF_TRANSLATE_MODEL"))
+    layout_model = _layout_model(os.environ.get("PDF_TRANSLATE_MODEL"))
 
     # The core reports progress by handing its tqdm bar to a callback.
     callback = None
@@ -270,15 +285,20 @@ def _run_engine(
         def callback(progress: object) -> None:
             on_progress(getattr(progress, "n", 0), getattr(progress, "total", 0) or 0)
 
+    # TranslateConverter splits "engine:model" on ":" and passes the model half
+    # to the engine's constructor; engines that ignore it (google, handoff)
+    # are unaffected. See pdf2zh/converter.py.
+    service = f"{engine}:{model}" if model else engine
+
     result = translate(
         files=[str(source)],
         output=str(temp_output),
         pages=_pages_to_indices(pages),
         lang_in=source_language,
         lang_out=target_language,
-        service=engine,
+        service=service,
         thread=threads,
-        model=model,
+        model=layout_model,
         envs=envs,
         callback=callback,
         ignore_cache=ignore_cache,
@@ -299,6 +319,7 @@ def translate_pdf(
     ignore_cache: bool = False,
     overwrite: bool = False,
     engine: str = "google",
+    model: str | None = None,
     segments: Path | None = None,
     emit_segments: Path | None = None,
     on_progress: Callable[[int, int], None] | None = None,
@@ -334,6 +355,7 @@ def translate_pdf(
                 engine,
                 envs,
                 on_progress,
+                model,
             )
         except TranslationError:
             raise
@@ -387,6 +409,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             ignore_cache=args.ignore_cache,
             overwrite=args.overwrite,
             engine=args.engine,
+            model=args.model,
             segments=args.segments,
             emit_segments=args.emit_segments,
         )

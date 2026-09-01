@@ -38,7 +38,7 @@ class TranslatePdfTests(unittest.TestCase):
         self.assertEqual(result.untranslated, 0)
         self.assertEqual(result.path.read_bytes(), b"%PDF-1.7\ntranslated")
         run.assert_called_once_with(
-            self.source, mock.ANY, "vi", "auto", None, translate_pdf.DEFAULT_THREADS, False, "google", {}, None
+            self.source, mock.ANY, "vi", "auto", None, translate_pdf.DEFAULT_THREADS, False, "google", {}, None, None
         )
 
     @mock.patch.object(translate_pdf, "_require_core")
@@ -171,6 +171,72 @@ class TranslatePdfTests(unittest.TestCase):
         bare = translate_pdf._parser().parse_args([str(self.source)])
         with self.assertRaisesRegex(translate_pdf.TranslationError, "--output-dir is required"):
             translate_pdf._validate_arguments(bare)
+
+    def test_anthropic_engine_requires_an_api_key(self):
+        args = translate_pdf._parser().parse_args(
+            [str(self.source), "--output-dir", str(self.output), "--engine", "anthropic"]
+        )
+        with mock.patch.dict("os.environ", {}, clear=True):
+            with self.assertRaisesRegex(translate_pdf.TranslationError, "ANTHROPIC_API_KEY"):
+                translate_pdf._validate_arguments(args)
+
+    def test_anthropic_engine_passes_once_the_key_is_set(self):
+        args = translate_pdf._parser().parse_args(
+            [str(self.source), "--output-dir", str(self.output), "--engine", "anthropic"]
+        )
+        with mock.patch.dict("os.environ", {"ANTHROPIC_API_KEY": "sk-ant-test"}):
+            translate_pdf._validate_arguments(args)  # must not raise
+
+    def test_model_flag_is_forwarded_into_the_service_string(self):
+        fake_model = object()
+        with (
+            mock.patch(
+                "pdf2zh.doclayout.OnnxModel.load_available",
+                return_value=fake_model,
+            ),
+            mock.patch(
+                "pdf2zh.high_level.translate",
+                return_value=[("translated.pdf", "")],
+            ) as core_translate,
+        ):
+            translate_pdf._run_engine(
+                self.source,
+                self.output,
+                "vi",
+                "en",
+                None,
+                1,
+                False,
+                "anthropic",
+                {},
+                None,
+                "claude-sonnet-5",
+            )
+        self.assertEqual(core_translate.call_args.kwargs["service"], "anthropic:claude-sonnet-5")
+
+    def test_no_model_flag_leaves_the_service_string_bare(self):
+        with (
+            mock.patch(
+                "pdf2zh.doclayout.OnnxModel.load_available",
+                return_value=object(),
+            ),
+            mock.patch(
+                "pdf2zh.high_level.translate",
+                return_value=[("translated.pdf", "")],
+            ) as core_translate,
+        ):
+            translate_pdf._run_engine(
+                self.source, self.output, "vi", "en", None, 1, False, "google", {},
+            )
+        self.assertEqual(core_translate.call_args.kwargs["service"], "google")
+
+    def test_cli_engine_choices_match_the_translator_registry(self):
+        # The CLI's --engine choices are a separate list from pdf2zh.translator's
+        # ENGINES dict; a new provider registered in one and not the other would
+        # silently be unreachable from one side.
+        from pdf2zh.translator import ENGINES as core_engines
+
+        self.assertEqual(set(translate_pdf.ENGINES), set(core_engines))
 
 
 if __name__ == "__main__":
