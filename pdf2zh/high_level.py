@@ -213,6 +213,27 @@ def translate_patch(
     return obj_patch, device.translation_failures
 
 
+def subset_fonts_or_warn(doc_zh: Document, doc_en: Document) -> None:
+    """Subset both output documents' embedded fonts, or keep them full-size on failure.
+
+    Every segment on every page is already translated by the time this runs.
+    Subsetting only trims the embedded font tables down to the glyphs actually
+    used, so a PyMuPDF-side failure here (seen on PDFs with an unusual
+    CIDFontType2 font descriptor) must not throw away that translation work -
+    fall back to shipping the full, unsubsetted fonts instead of failing the
+    whole document.
+    """
+    try:
+        doc_zh.subset_fonts(fallback=True)
+        doc_en.subset_fonts(fallback=True)
+    except Exception:
+        logger.warning(
+            "Font subsetting failed; keeping full embedded fonts "
+            "(larger output, same translated content)",
+            exc_info=True,
+        )
+
+
 def translate_stream(
     stream: bytes,
     pages: Optional[list[int]] = None,
@@ -289,8 +310,7 @@ def translate_stream(
     for id in range(page_count):
         doc_en.move_page(page_count + id, id * 2 + 1)
     if not skip_subset_fonts:
-        doc_zh.subset_fonts(fallback=True)
-        doc_en.subset_fonts(fallback=True)
+        subset_fonts_or_warn(doc_zh, doc_en)
     return (
         doc_zh.write(deflate=True, garbage=3, use_objstms=1),
         doc_en.write(deflate=True, garbage=3, use_objstms=1),
