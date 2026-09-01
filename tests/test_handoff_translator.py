@@ -122,10 +122,16 @@ class HandoffTranslatorTests(unittest.TestCase):
         self.temp_directory.cleanup()
         clean_test_db(self.test_db)
 
-    def _translator(self, table: list[dict] | None = None) -> HandoffTranslator:
+    def _translator(
+        self, table: list[dict] | None = None, glossary: dict | None = None
+    ) -> HandoffTranslator:
         envs = {"segments_out": str(self.misses)}
         if table is not None:
             envs["segments_in"] = str(_jsonl(self.root / "table.jsonl", table))
+        if glossary is not None:
+            glossary_path = self.root / "glossary.json"
+            glossary_path.write_text(json.dumps(glossary, ensure_ascii=False), encoding="utf-8")
+            envs["glossary"] = str(glossary_path)
         return HandoffTranslator("auto", "vi", envs=envs)
 
     def _recorded(self) -> list[dict]:
@@ -190,6 +196,34 @@ class HandoffTranslatorTests(unittest.TestCase):
         self.misses.write_text('{"src": "from an older run"}\n', encoding="utf-8")
         self._translator()
         self.assertEqual(self._recorded_misses(), [])
+
+    def test_a_matched_glossary_term_rides_along_as_terms(self):
+        translator = self._translator(
+            glossary={"conduction": {"vi": "dẫn nhiệt", "domain": "heat-transfer"}}
+        )
+        translator.translate("Conduction occurs between two bodies")
+        self.assertEqual(
+            self._recorded(),
+            [
+                {
+                    "id": "seg-00000001",
+                    "src": "Conduction occurs between two bodies",
+                    "terms": {"conduction": "dẫn nhiệt"},
+                }
+            ],
+        )
+
+    def test_a_record_with_no_glossary_hit_omits_terms(self):
+        translator = self._translator(
+            glossary={"premise": {"vi": "tiền đề", "domain": "logic"}}
+        )
+        translator.translate("Conduction occurs between two bodies")
+        self.assertNotIn("terms", self._recorded()[0])
+
+    def test_no_glossary_given_behaves_as_before(self):
+        translator = self._translator()
+        translator.translate("Hello")
+        self.assertNotIn("terms", self._recorded()[0])
 
 
 if __name__ == "__main__":

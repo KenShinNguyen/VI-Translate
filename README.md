@@ -159,6 +159,25 @@ $env:ANTHROPIC_API_KEY = "sk-ant-..."
 # tùy chọn: --model claude-sonnet-5
 ```
 
+### Ép thuật ngữ bắt buộc (glossary)
+
+Với engine Anthropic hoặc Handoff, `--glossary` truyền một danh sách thuật ngữ bắt buộc thay vì để từng đoạn tự chọn cách dịch:
+
+```powershell
+.venv\Scripts\python.exe scripts\translate_pdf.py INPUT.pdf --engine anthropic --glossary glossary.json --output-dir OUT
+```
+
+`glossary.json`:
+
+```json
+{
+  "conduction": {"vi": "dẫn nhiệt", "domain": "heat-transfer", "locked": true},
+  "premise": {"vi": "tiền đề", "domain": "logic"}
+}
+```
+
+Google mode bỏ qua glossary vì endpoint không nhận chỉ dẫn. Xem chi tiết tại [SKILL.md](SKILL.md#glossary-mandatory-terminology).
+
 ### Dịch bằng Handoff
 
 ```powershell

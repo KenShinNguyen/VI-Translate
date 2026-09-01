@@ -15,6 +15,7 @@ from typing import Any, ClassVar
 import requests
 
 from pdf2zh.cache import TranslationCache
+from pdf2zh.glossary import GlossaryEntry, load_glossary, matching_terms, terminology_block
 
 logger = logging.getLogger(__name__)
 
@@ -295,6 +296,7 @@ class AnthropicTranslator(BaseTranslator):
         model: str | None = None,
         *,
         ignore_cache: bool = False,
+        envs: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(lang_in, lang_out, model, ignore_cache=ignore_cache, **kwargs)
@@ -305,9 +307,16 @@ class AnthropicTranslator(BaseTranslator):
             )
         self.model_name = model or ANTHROPIC_DEFAULT_MODEL
         self.system_prompt = _anthropic_system_prompt(self.lang_out)
+        self.glossary: dict[str, GlossaryEntry] = load_glossary((envs or {}).get("glossary"))
         self.session = requests.Session()
 
     def do_translate(self, text: str) -> str:
+        system_prompt = self.system_prompt
+        matches = matching_terms(text, self.glossary, self.lang_out)
+        block = terminology_block(matches, self.lang_out)
+        if block:
+            system_prompt = f"{system_prompt}\n\n{block}"
+
         response = self.session.post(
             ANTHROPIC_API_URL,
             headers={
@@ -321,7 +330,7 @@ class AnthropicTranslator(BaseTranslator):
                 # prose runs longer than English, but a paragraph-sized segment
                 # never approaches the model's real output limit.
                 "max_tokens": min(8192, max(1024, len(text) // 2 + 512)),
-                "system": self.system_prompt,
+                "system": system_prompt,
                 "messages": [{"role": "user", "content": text}],
             },
             timeout=60,
@@ -409,6 +418,7 @@ class HandoffTranslator(BaseTranslator):
         envs = envs or {}
         self.table = load_segment_table(envs.get("segments_in"))
         self.misses_path = envs.get("segments_out")
+        self.glossary: dict[str, GlossaryEntry] = load_glossary(envs.get("glossary"))
         self._seen: set[str] = set()
         self._emitted = 0
         self._lock = threading.Lock()
@@ -430,6 +440,12 @@ class HandoffTranslator(BaseTranslator):
         Deliberately not an identity: two occurrences of the same text are one
         record, which is what keeps a term translated the same way throughout a
         book.
+
+        `terms` is present only when a glossary was given and at least one of
+        its terms occurs in `text`; it names the exact translation the agent
+        must use for each, so a term is not left to whichever segment gets
+        translated first. Omitted rather than emitted empty, so a record with
+        no glossary hits reads the same as it did before this field existed.
         """
         if not self.misses_path:
             return
@@ -442,6 +458,11 @@ class HandoffTranslator(BaseTranslator):
             if self.current_page is not None:
                 record["page"] = self.current_page
             record["src"] = text
+            matches = matching_terms(text, self.glossary, self.lang_out)
+            if matches:
+                record["terms"] = {
+                    entry.term: entry.translation_for(self.lang_out) for entry in matches
+                }
             with open(self.misses_path, "a", encoding="utf-8") as stream:
                 stream.write(json.dumps(record, ensure_ascii=False) + "\n")
 

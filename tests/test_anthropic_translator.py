@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
+import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from pdf2zh.cache import clean_test_db, init_test_db
@@ -26,10 +29,18 @@ class AnthropicTranslatorTests(unittest.TestCase):
             "os.environ", {"ANTHROPIC_API_KEY": "sk-ant-test"}, clear=False
         )
         self.env_patch.start()
+        self.temp_directory = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp_directory.name)
 
     def tearDown(self) -> None:
         self.env_patch.stop()
+        self.temp_directory.cleanup()
         clean_test_db(self.test_db)
+
+    def _glossary_path(self, data: dict) -> str:
+        path = self.root / "glossary.json"
+        path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        return str(path)
 
     def test_refuses_to_start_without_an_api_key(self):
         with mock.patch.dict("os.environ", {}, clear=True):
@@ -109,6 +120,40 @@ class AnthropicTranslatorTests(unittest.TestCase):
         from pdf2zh.translator import ENGINES
 
         self.assertIs(ENGINES["anthropic"], AnthropicTranslator)
+
+    def test_a_matched_glossary_term_is_added_to_the_system_prompt(self):
+        envs = {
+            "glossary": self._glossary_path(
+                {"conduction": {"vi": "dẫn nhiệt", "domain": "heat-transfer"}}
+            )
+        }
+        translator = AnthropicTranslator("auto", "vi", ignore_cache=True, envs=envs)
+        response = _response(payload={"content": [{"type": "text", "text": "Dẫn nhiệt xảy ra"}]})
+        with mock.patch.object(translator.session, "post", return_value=response) as post:
+            translator.do_translate("Conduction occurs between two bodies")
+
+        system_prompt = post.call_args.kwargs["json"]["system"]
+        self.assertIn("MANDATORY TERMINOLOGY", system_prompt)
+        self.assertIn("conduction = dẫn nhiệt", system_prompt)
+
+    def test_a_glossary_with_no_hit_leaves_the_system_prompt_unchanged(self):
+        envs = {
+            "glossary": self._glossary_path(
+                {"premise": {"vi": "tiền đề", "domain": "logic"}}
+            )
+        }
+        translator = AnthropicTranslator("auto", "vi", ignore_cache=True, envs=envs)
+        response = _response(payload={"content": [{"type": "text", "text": "Dẫn nhiệt xảy ra"}]})
+        with mock.patch.object(translator.session, "post", return_value=response) as post:
+            translator.do_translate("Conduction occurs between two bodies")
+
+        system_prompt = post.call_args.kwargs["json"]["system"]
+        self.assertNotIn("MANDATORY TERMINOLOGY", system_prompt)
+        self.assertEqual(system_prompt, translator.system_prompt)
+
+    def test_no_glossary_given_behaves_as_before(self):
+        translator = AnthropicTranslator("auto", "vi", ignore_cache=True)
+        self.assertEqual(translator.glossary, {})
 
 
 if __name__ == "__main__":

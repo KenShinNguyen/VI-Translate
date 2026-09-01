@@ -115,7 +115,7 @@ An output directory is not required during extraction because the pass-one PDF i
 {"id":"seg-00000001","page":12,"src":"exact source text"}
 ```
 
-`page` is the one-based page the segment came from; open it when a term is ambiguous. `id` is a label for your own batching and progress notes.
+`page` is the one-based page the segment came from; open it when a term is ambiguous. `id` is a label for your own batching and progress notes. When `--glossary` was given (see below), a segment that contains a glossary term carries a `terms` field: `{"id":"seg-00000001","src":"...","terms":{"conduction":"dẫn nhiệt"}}`. Its translation must use exactly that Vietnamese wording for that term, wherever it appears in the segment.
 
 Read `segments.jsonl` in manageable batches. Write one JSON object per line to `translations.jsonl`:
 
@@ -139,10 +139,28 @@ The command prints the remaining untranslated segment count. If it is nonzero, t
 
 Extraction and rebuild each run the layout pass, so handoff uses roughly twice the local PDF processing of Google mode in addition to the agent's translation work.
 
+## Glossary (mandatory terminology)
+
+`--glossary <path>` gives Anthropic and Handoff mode a term list to follow instead of leaving word choice to whichever segment reaches the engine first. Google mode ignores it - the endpoint takes no instructions.
+
+The file is JSON, one document-wide glossary per run:
+
+```json
+{
+  "conduction": {"vi": "dẫn nhiệt", "domain": "heat-transfer", "locked": true},
+  "premise": {"vi": "tiền đề", "domain": "logic"}
+}
+```
+
+`domain` is for the glossary author's own organization; this runner does not filter by it. `locked` defaults to `true` and is not yet enforced automatically - a mismatch is something to look for in step 3 of verification below, not something the runner rejects on its own.
+
+A malformed glossary (an entry missing a translation for the target language, invalid JSON) is rejected immediately, before the layout pass starts. In Anthropic mode, only the terms that actually occur in a given segment are added to that call's prompt; in Handoff mode, they ride along on the matching `segments.jsonl` record as `terms` (see step 2 above).
+
 ## Verify before delivery
 
 1. Confirm the output exists and the source still exists unchanged.
 2. Confirm source and output page counts match.
 3. Extract text page by page and check for substantial untranslated passages, missing formulas, damaged URLs, or lost identifiers.
-4. When page rendering or image inspection is available, render every output page and inspect for blank pages, missing glyphs, clipping, overlap, and displaced tables or figures.
-5. If full visual inspection is unavailable, say which checks were completed. Do not present a partially verified or partially translated file as fully complete.
+4. When a `--glossary` was used, spot-check that its locked terms appear with the mandated translation in the output; report any mismatch instead of silently accepting it.
+5. When page rendering or image inspection is available, render every output page and inspect for blank pages, missing glyphs, clipping, overlap, and displaced tables or figures.
+6. If full visual inspection is unavailable, say which checks were completed. Do not present a partially verified or partially translated file as fully complete.
