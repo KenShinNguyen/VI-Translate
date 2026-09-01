@@ -5,6 +5,7 @@ from __future__ import annotations
 import html
 import json
 import logging
+import os
 import re
 import threading
 import unicodedata
@@ -14,6 +15,7 @@ from typing import Any, ClassVar
 import requests
 
 from pdf2zh.cache import TranslationCache
+from pdf2zh.glossary import GlossaryEntry, load_glossary, matching_terms, terminology_block
 
 logger = logging.getLogger(__name__)
 
@@ -253,6 +255,106 @@ def placeholders(text: str) -> list[str]:
     return [f"{{v{int(number)}}}" for number in PLACEHOLDER_PATTERN.findall(text)]
 
 
+ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
+ANTHROPIC_API_VERSION = "2023-06-01"
+# Fast and inexpensive default: a book is thousands of short segments, and the
+# quality gap between Claude models matters far less here than for open-ended
+# generation. Override per run with "anthropic:<model>" (--engine anthropic
+# --model ...) for a stronger model.
+ANTHROPIC_DEFAULT_MODEL = "claude-haiku-4-5-20251001"
+
+
+def _anthropic_system_prompt(lang_out: str) -> str:
+    """System prompt enforcing the same fidelity contract Handoff mode documents."""
+    return (
+        f"Translate the user's text into the language identified by the code "
+        f"'{lang_out}'. Reply with the translation only - no preamble, quotation "
+        "marks, or commentary. Preserve URLs, file paths, identifiers, citation "
+        "markers, and numbers exactly as written. Formula and code placeholders "
+        "such as {v0} or {v12} are immutable: keep every one, with the same "
+        "count and order as the source, and never translate, renumber, drop, "
+        "or explain them."
+    )
+
+
+class AnthropicTranslator(BaseTranslator):
+    """Translate through the Anthropic Messages API.
+
+    Reads its key from `ANTHROPIC_API_KEY`; the runner checks for it before
+    starting a translation so a missing key fails fast instead of after the
+    layout pass has already run. Unlike Google, this engine accepts a per-run
+    model id through the "anthropic:<model>" service string, since Claude
+    models trade off speed, cost, and translation quality differently.
+    """
+
+    name = "anthropic"
+
+    def __init__(
+        self,
+        lang_in: str,
+        lang_out: str,
+        model: str | None = None,
+        *,
+        ignore_cache: bool = False,
+        envs: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(lang_in, lang_out, model, ignore_cache=ignore_cache, **kwargs)
+        self.api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if not self.api_key:
+            raise RuntimeError(
+                "ANTHROPIC_API_KEY environment variable is required for --engine anthropic"
+            )
+        self.model_name = model or ANTHROPIC_DEFAULT_MODEL
+        self.system_prompt = _anthropic_system_prompt(self.lang_out)
+        self.glossary: dict[str, GlossaryEntry] = load_glossary((envs or {}).get("glossary"))
+        self.session = requests.Session()
+
+    def do_translate(self, text: str) -> str:
+        system_prompt = self.system_prompt
+        matches = matching_terms(text, self.glossary, self.lang_out)
+        block = terminology_block(matches, self.lang_out)
+        if block:
+            system_prompt = f"{system_prompt}\n\n{block}"
+
+        response = self.session.post(
+            ANTHROPIC_API_URL,
+            headers={
+                "x-api-key": self.api_key,
+                "anthropic-version": ANTHROPIC_API_VERSION,
+                "content-type": "application/json",
+            },
+            json={
+                "model": self.model_name,
+                # A generous ceiling sized off the input: translated Vietnamese
+                # prose runs longer than English, but a paragraph-sized segment
+                # never approaches the model's real output limit.
+                "max_tokens": min(8192, max(1024, len(text) // 2 + 512)),
+                "system": system_prompt,
+                "messages": [{"role": "user", "content": text}],
+            },
+            timeout=60,
+        )
+        if response.status_code == 401:
+            raise RuntimeError("Anthropic API rejected the request: invalid ANTHROPIC_API_KEY")
+        response.raise_for_status()
+        payload = response.json()
+        try:
+            translated = "".join(
+                block["text"] for block in payload["content"] if block.get("type") == "text"
+            )
+        except (KeyError, TypeError) as error:
+            raise RuntimeError("Anthropic API response did not contain translated text") from error
+        translated = remove_control_characters(translated.strip())
+        if not translated:
+            raise RuntimeError("Anthropic API returned an empty translation")
+        if placeholders(text) != placeholders(translated):
+            raise RuntimeError(
+                "Anthropic API response dropped, reordered, or duplicated a formula placeholder"
+            )
+        return translated
+
+
 def load_segment_table(path: str | None) -> dict[str, str]:
     """Load a source-to-translation table from a JSONL file of {"src", "dst"} records.
 
@@ -316,6 +418,7 @@ class HandoffTranslator(BaseTranslator):
         envs = envs or {}
         self.table = load_segment_table(envs.get("segments_in"))
         self.misses_path = envs.get("segments_out")
+        self.glossary: dict[str, GlossaryEntry] = load_glossary(envs.get("glossary"))
         self._seen: set[str] = set()
         self._emitted = 0
         self._lock = threading.Lock()
@@ -337,6 +440,12 @@ class HandoffTranslator(BaseTranslator):
         Deliberately not an identity: two occurrences of the same text are one
         record, which is what keeps a term translated the same way throughout a
         book.
+
+        `terms` is present only when a glossary was given and at least one of
+        its terms occurs in `text`; it names the exact translation the agent
+        must use for each, so a term is not left to whichever segment gets
+        translated first. Omitted rather than emitted empty, so a record with
+        no glossary hits reads the same as it did before this field existed.
         """
         if not self.misses_path:
             return
@@ -349,10 +458,15 @@ class HandoffTranslator(BaseTranslator):
             if self.current_page is not None:
                 record["page"] = self.current_page
             record["src"] = text
+            matches = matching_terms(text, self.glossary, self.lang_out)
+            if matches:
+                record["terms"] = {
+                    entry.term: entry.translation_for(self.lang_out) for entry in matches
+                }
             with open(self.misses_path, "a", encoding="utf-8") as stream:
                 stream.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
 ENGINES: dict[str, type[BaseTranslator]] = {
-    engine.name: engine for engine in (GoogleTranslator, HandoffTranslator)
+    engine.name: engine for engine in (GoogleTranslator, AnthropicTranslator, HandoffTranslator)
 }

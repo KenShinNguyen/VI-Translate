@@ -20,6 +20,11 @@ BUNDLED_CORE = (SKILL_ROOT / "pdf2zh").resolve()
 if str(SKILL_ROOT) not in sys.path:
     sys.path.insert(0, str(SKILL_ROOT))
 
+# Pure stdlib (json/re/dataclasses only) - unlike the rest of pdf2zh, safe to
+# import here so a bad glossary file fails argument validation instead of
+# surfacing deep inside the layout pass.
+from pdf2zh.glossary import load_glossary  # noqa: E402
+
 CORE_VERSION = "1.9.11"
 RULESET = "code4life-preservation-v1"
 DEFAULT_TARGET_LANGUAGE = "vi"
@@ -35,7 +40,7 @@ TARGET_LANGUAGES = frozenset(
     }
 )
 
-ENGINES = ("google", "handoff")
+ENGINES = ("google", "handoff", "anthropic")
 
 # Measured on an eight-page sample: 2 threads 48s, 4 threads 30s, 8 threads 27s,
 # 12 threads 29s. Past four, the layout pass rather than the network is the floor,
@@ -105,6 +110,23 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--threads", default=DEFAULT_THREADS, type=_positive_threads)
     parser.add_argument("--engine", default="google", choices=ENGINES)
     parser.add_argument(
+        "--model",
+        help=(
+            "translation model id for engines that take one, e.g. "
+            "--engine anthropic --model claude-sonnet-5. Ignored by engines "
+            "that don't use it."
+        ),
+    )
+    parser.add_argument(
+        "--glossary",
+        type=Path,
+        help=(
+            'JSON file of mandatory terminology: {"term": {"<lang>": "translation", '
+            '"domain": "...", "locked": true}}. Applies to the whole document; '
+            "engines that cannot take instructions (google) ignore it."
+        ),
+    )
+    parser.add_argument(
         "--segments",
         type=Path,
         help='handoff engine: JSONL of {"src","dst"} records to translate from',
@@ -127,6 +149,19 @@ def _validate_arguments(args: argparse.Namespace) -> None:
             raise TranslationError("--engine handoff needs --segments, --emit-segments, or both")
     elif args.segments is not None or args.emit_segments is not None:
         raise TranslationError("--segments and --emit-segments require --engine handoff")
+    if args.engine == "anthropic" and not os.environ.get("ANTHROPIC_API_KEY"):
+        # Fail before the layout pass builds the ONNX model and parses the PDF,
+        # rather than partway through the first page's translation calls.
+        raise TranslationError(
+            "--engine anthropic needs the ANTHROPIC_API_KEY environment variable"
+        )
+    if args.glossary is not None:
+        if not args.glossary.is_file():
+            raise TranslationError(f"Glossary file does not exist: {args.glossary}")
+        try:
+            load_glossary(args.glossary)
+        except ValueError as error:
+            raise TranslationError(str(error)) from error
 
 
 def _require_core() -> None:
@@ -194,8 +229,12 @@ def _pages_to_indices(pages: str | None) -> list[int] | None:
     return indices
 
 
-def _segment_envs(segments: Path | None, emit_segments: Path | None) -> dict[str, str]:
-    """Resolve the handoff file paths that the translator reads through `envs`."""
+def _engine_envs(
+    segments: Path | None,
+    emit_segments: Path | None,
+    glossary: Path | None,
+) -> dict[str, str]:
+    """Resolve the file paths engines read through `envs` (handoff tables, the glossary)."""
     envs: dict[str, str] = {}
     if segments is not None:
         source = segments.expanduser().resolve()
@@ -206,6 +245,12 @@ def _segment_envs(segments: Path | None, emit_segments: Path | None) -> dict[str
         emitted = emit_segments.expanduser().resolve()
         emitted.parent.mkdir(parents=True, exist_ok=True)
         envs["segments_out"] = str(emitted)
+    if glossary is not None:
+        # Existence and shape were already checked in _validate_arguments; not
+        # re-validated here so a caller that skips that step (as tests do) still
+        # gets a clear error from load_glossary inside the engine, not a typo'd
+        # path silently reduced to no glossary.
+        envs["glossary"] = str(glossary.expanduser().resolve())
     return envs
 
 
@@ -257,12 +302,13 @@ def _run_engine(
     engine: str,
     envs: dict[str, str],
     on_progress: Callable[[int, int], None] | None = None,
+    model: str | None = None,
 ) -> int:
     """Run the core and return how many segments were left untranslated."""
     from pdf2zh.high_level import translate
 
     # A packaged build ships the layout model so the first run needs no network.
-    model = _layout_model(os.environ.get("PDF_TRANSLATE_MODEL"))
+    layout_model = _layout_model(os.environ.get("PDF_TRANSLATE_MODEL"))
 
     # The core reports progress by handing its tqdm bar to a callback.
     callback = None
@@ -270,15 +316,20 @@ def _run_engine(
         def callback(progress: object) -> None:
             on_progress(getattr(progress, "n", 0), getattr(progress, "total", 0) or 0)
 
+    # TranslateConverter splits "engine:model" on ":" and passes the model half
+    # to the engine's constructor; engines that ignore it (google, handoff)
+    # are unaffected. See pdf2zh/converter.py.
+    service = f"{engine}:{model}" if model else engine
+
     result = translate(
         files=[str(source)],
         output=str(temp_output),
         pages=_pages_to_indices(pages),
         lang_in=source_language,
         lang_out=target_language,
-        service=engine,
+        service=service,
         thread=threads,
-        model=model,
+        model=layout_model,
         envs=envs,
         callback=callback,
         ignore_cache=ignore_cache,
@@ -299,14 +350,16 @@ def translate_pdf(
     ignore_cache: bool = False,
     overwrite: bool = False,
     engine: str = "google",
+    model: str | None = None,
     segments: Path | None = None,
     emit_segments: Path | None = None,
+    glossary: Path | None = None,
     on_progress: Callable[[int, int], None] | None = None,
 ) -> Translation:
     """Translate one PDF, reporting any segments the engine could not translate."""
     _require_core()
     source = _validate_input(input_pdf)
-    envs = _segment_envs(segments, emit_segments)
+    envs = _engine_envs(segments, emit_segments, glossary)
 
     destination: Path | None = None
     destination_dir: Path | None = None
@@ -334,6 +387,7 @@ def translate_pdf(
                 engine,
                 envs,
                 on_progress,
+                model,
             )
         except TranslationError:
             raise
@@ -387,8 +441,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             ignore_cache=args.ignore_cache,
             overwrite=args.overwrite,
             engine=args.engine,
+            model=args.model,
             segments=args.segments,
             emit_segments=args.emit_segments,
+            glossary=args.glossary,
         )
     except TranslationError as error:
         print(f"error: {error}", file=sys.stderr)
