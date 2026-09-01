@@ -127,6 +127,14 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--domain",
+        help=(
+            "subject-area label recorded alongside every translation memory entry "
+            "this run writes (e.g. 'logic', 'strategic-intelligence'). Informational "
+            "only for now - does not filter which entries a lookup can reuse."
+        ),
+    )
+    parser.add_argument(
         "--segments",
         type=Path,
         help='handoff engine: JSONL of {"src","dst"} records to translate from',
@@ -136,7 +144,15 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         help="handoff engine: write the segments left untranslated here, as JSONL",
     )
-    parser.add_argument("--ignore-cache", action="store_true")
+    parser.add_argument(
+        "--ignore-cache",
+        action="store_true",
+        help=(
+            "skip the translation memory: nothing is read or written. In "
+            "handoff mode this also stops reusing a translation supplied in "
+            "a previous run for the same language pair."
+        ),
+    )
     parser.add_argument("--overwrite", action="store_true")
     return parser
 
@@ -233,14 +249,17 @@ def _engine_envs(
     segments: Path | None,
     emit_segments: Path | None,
     glossary: Path | None,
+    *,
+    input_pdf: Path | None = None,
+    domain: str | None = None,
 ) -> dict[str, str]:
-    """Resolve the file paths engines read through `envs` (handoff tables, the glossary)."""
+    """Resolve what engines read through `envs` (handoff tables, glossary, TM provenance)."""
     envs: dict[str, str] = {}
     if segments is not None:
-        source = segments.expanduser().resolve()
-        if not source.is_file():
-            raise TranslationError(f"Segments file does not exist: {source}")
-        envs["segments_in"] = str(source)
+        segments_path = segments.expanduser().resolve()
+        if not segments_path.is_file():
+            raise TranslationError(f"Segments file does not exist: {segments_path}")
+        envs["segments_in"] = str(segments_path)
     if emit_segments is not None:
         emitted = emit_segments.expanduser().resolve()
         emitted.parent.mkdir(parents=True, exist_ok=True)
@@ -251,6 +270,13 @@ def _engine_envs(
         # gets a clear error from load_glossary inside the engine, not a typo'd
         # path silently reduced to no glossary.
         envs["glossary"] = str(glossary.expanduser().resolve())
+    if input_pdf is not None:
+        # The filename alone, not the full path: enough to tell chapters of the
+        # same book apart in the translation memory without writing a local
+        # filesystem layout into a SQLite file meant to be shared or inspected.
+        envs["source_document"] = input_pdf.name
+    if domain:
+        envs["domain"] = domain
     return envs
 
 
@@ -354,12 +380,13 @@ def translate_pdf(
     segments: Path | None = None,
     emit_segments: Path | None = None,
     glossary: Path | None = None,
+    domain: str | None = None,
     on_progress: Callable[[int, int], None] | None = None,
 ) -> Translation:
     """Translate one PDF, reporting any segments the engine could not translate."""
     _require_core()
     source = _validate_input(input_pdf)
-    envs = _engine_envs(segments, emit_segments, glossary)
+    envs = _engine_envs(segments, emit_segments, glossary, input_pdf=source, domain=domain)
 
     destination: Path | None = None
     destination_dir: Path | None = None
@@ -445,6 +472,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             segments=args.segments,
             emit_segments=args.emit_segments,
             glossary=args.glossary,
+            domain=args.domain,
         )
     except TranslationError as error:
         print(f"error: {error}", file=sys.stderr)

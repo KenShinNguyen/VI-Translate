@@ -44,6 +44,7 @@ class BaseTranslator:
         model: str | None = None,
         *,
         ignore_cache: bool = False,
+        envs: dict[str, Any] | None = None,
         **_: Any,
     ) -> None:
         self.lang_in = self.lang_map.get(lang_in.lower(), lang_in)
@@ -58,6 +59,7 @@ class BaseTranslator:
         # Set by the converter before each page's worker pool, so a translator
         # that reports segments can say where one came from.
         self.current_page: int | None = None
+        envs = envs or {}
         self.cache = TranslationCache(
             self.name,
             {
@@ -65,6 +67,8 @@ class BaseTranslator:
                 "lang_out": self.lang_out,
                 "model": model,
             },
+            domain=envs.get("domain"),
+            source_document=envs.get("source_document"),
         )
 
     def translate(self, text: str, ignore_cache: bool = False) -> str:
@@ -299,7 +303,7 @@ class AnthropicTranslator(BaseTranslator):
         envs: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
-        super().__init__(lang_in, lang_out, model, ignore_cache=ignore_cache, **kwargs)
+        super().__init__(lang_in, lang_out, model, ignore_cache=ignore_cache, envs=envs, **kwargs)
         self.api_key = os.environ.get("ANTHROPIC_API_KEY")
         if not self.api_key:
             raise RuntimeError(
@@ -412,9 +416,15 @@ class HandoffTranslator(BaseTranslator):
         envs: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
-        # Misses fall through untranslated, so the shared cache must never see them
-        # or "translation == original" is memoised for every later run.
-        super().__init__(lang_in, lang_out, model, ignore_cache=True, **kwargs)
+        # The outer BaseTranslator.translate() wrapper's own cache read/write
+        # must stay off regardless of ignore_cache: a miss falls through as
+        # `text` unchanged, indistinguishable from a real translation to that
+        # generic wrapper, so it would memoise "translation == original" for
+        # every later run. do_translate() below manages its own translation-
+        # memory reads and writes instead, gated on the caller's actual
+        # ignore_cache request via `self._use_tm`.
+        super().__init__(lang_in, lang_out, model, ignore_cache=True, envs=envs, **kwargs)
+        self._use_tm = not ignore_cache
         envs = envs or {}
         self.table = load_segment_table(envs.get("segments_in"))
         self.misses_path = envs.get("segments_out")
@@ -428,7 +438,19 @@ class HandoffTranslator(BaseTranslator):
     def do_translate(self, text: str) -> str:
         translation = self.table.get(text)
         if translation is not None:
+            # A translation supplied for this run - the strongest signal
+            # available, since it came from the table the caller (agent or
+            # human) explicitly filled in. Worth remembering for the next
+            # chapter of the same book, or the next run of this one.
+            if self._use_tm:
+                self.cache.set(text, translation)
             return translation
+        if self._use_tm:
+            remembered = self.cache.get(text)
+            if remembered is not None:
+                # A prior run already resolved this exact (or normalized-
+                # equivalent) segment - reuse it instead of asking again.
+                return remembered
         self._record_miss(text)
         return text
 

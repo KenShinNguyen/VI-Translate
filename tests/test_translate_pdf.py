@@ -39,7 +39,17 @@ class TranslatePdfTests(unittest.TestCase):
         self.assertEqual(result.untranslated, 0)
         self.assertEqual(result.path.read_bytes(), b"%PDF-1.7\ntranslated")
         run.assert_called_once_with(
-            self.source, mock.ANY, "vi", "auto", None, translate_pdf.DEFAULT_THREADS, False, "google", {}, None, None
+            self.source,
+            mock.ANY,
+            "vi",
+            "auto",
+            None,
+            translate_pdf.DEFAULT_THREADS,
+            False,
+            "google",
+            {"source_document": "guide.pdf"},
+            None,
+            None,
         )
 
     @mock.patch.object(translate_pdf, "_require_core")
@@ -279,6 +289,20 @@ class TranslatePdfTests(unittest.TestCase):
 
     def test_no_glossary_omits_the_envs_key(self):
         self.assertEqual(translate_pdf._engine_envs(None, None, None), {})
+
+    def test_source_document_is_the_filename_not_the_full_path(self):
+        envs = translate_pdf._engine_envs(None, None, None, input_pdf=self.source)
+        self.assertEqual(envs, {"source_document": "guide.pdf"})
+
+    def test_domain_is_recorded_when_given(self):
+        envs = translate_pdf._engine_envs(
+            None, None, None, input_pdf=self.source, domain="logic"
+        )
+        self.assertEqual(envs, {"source_document": "guide.pdf", "domain": "logic"})
+
+    def test_no_domain_omits_the_envs_key(self):
+        envs = translate_pdf._engine_envs(None, None, None, input_pdf=self.source, domain=None)
+        self.assertNotIn("domain", envs)
 
 
 if __name__ == "__main__":

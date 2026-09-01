@@ -22,6 +22,8 @@ except ImportError:  # pragma: no cover - pymupdf is a core dependency
 if pymupdf is not None:
     from pdf2zh import high_level
 
+from pdf2zh.cache import clean_test_db, init_test_db
+
 PROSE = (
     "Conduction occurs when two bodies are in direct contact with each other. "
     "The rate of heat transfer depends on the thermal conductivity of the "
@@ -83,6 +85,16 @@ class _StubModel:
 
 @unittest.skipIf(pymupdf is None, "pymupdf is not installed")
 class PageLoopTests(unittest.TestCase):
+    def setUp(self) -> None:
+        # The real page loop constructs a real HandoffTranslator, which now
+        # reads and writes the translation memory (see HandoffTranslator.
+        # do_translate) - this must never touch the user's actual
+        # ~/.cache/pdf2zh database, so give every test its own SQLite file.
+        self.test_db = init_test_db()
+
+    def tearDown(self) -> None:
+        clean_test_db(self.test_db)
+
     @staticmethod
     def _document(*pages: tuple[str, ...]) -> bytes:
         """One page per argument; a tuple of strings becomes stacked blocks."""

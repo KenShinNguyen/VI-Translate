@@ -156,6 +156,16 @@ The file is JSON, one document-wide glossary per run:
 
 A malformed glossary (an entry missing a translation for the target language, invalid JSON) is rejected immediately, before the layout pass starts. In Anthropic mode, only the terms that actually occur in a given segment are added to that call's prompt; in Handoff mode, they ride along on the matching `segments.jsonl` record as `terms` (see step 2 above).
 
+## Translation memory
+
+Every translation (any engine) is cached by exact text, and now also by a normalized form (collapsed whitespace, Unicode NFC) so a sentence re-extracted with slightly different line-wrapping still reuses the same entry.
+
+In Handoff mode specifically, a segment resolves in this order: (1) the `--segments` table supplied this run, (2) a translation memory entry from a *previous* run with the same language pair, (3) reported as a miss for the agent to translate. A translation supplied through step 1 is written to the translation memory, so a phrase translated once for chapter 1 does not come back as a miss for chapter 2 of the same book - and does not need re-translating at all, agent or not.
+
+`--ignore-cache` turns this off for the current run (fresh translation everywhere, nothing read or written); `--domain <label>` tags every entry this run writes with a subject-area label for later inspection. Neither `--domain` nor which document a book entry came from currently filters lookups - v1 translation memory reuses any matching entry regardless of domain or source document, so do not rely on `--domain` to keep two unrelated books' vocabulary from mixing.
+
+The cache lives at `~/.cache/pdf2zh/cache.v2.db` (SQLite). It has no eviction policy; delete the file to reset it.
+
 ## Verify before delivery
 
 1. Confirm the output exists and the source still exists unchanged.
