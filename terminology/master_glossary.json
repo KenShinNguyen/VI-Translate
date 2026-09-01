@@ -1,0 +1,10 @@
+{
+  "terms": {
+    "conduction": "dẫn nhiệt",
+    "convection": "đối lưu",
+    "radiation": "bức xạ",
+    "thermal conductivity": "độ dẫn nhiệt",
+    "heat flux": "thông lượng nhiệt",
+    "boundary condition": "điều kiện biên"
+  }
+}
